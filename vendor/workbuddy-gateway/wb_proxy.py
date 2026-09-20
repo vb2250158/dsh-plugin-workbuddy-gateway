@@ -616,13 +616,25 @@ class Session:
 POOL = None
 SCHEDULER = None
 ACCOUNTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'accounts')
-REALM_STATE_FILE = os.path.join(ACCOUNTS_DIR, "active_realm.json")
+
+
+def realm_state_file():
+    """Resolve the persisted-realm path lazily, against the *current* ACCOUNTS_DIR.
+
+    Computing this at import time pinned the file to the plugin's own vendor
+    directory, so `--accounts-dir` (which the host half always passes to keep
+    mutable state under $DSH_HOME) redirected the accounts but not the realm:
+    the realm write silently landed beside the source and was never read back,
+    so a restart reverted to the default region.
+    """
+    return os.path.join(ACCOUNTS_DIR, "active_realm.json")
+
 
 def load_persisted_realm():
     global CURRENT_REALM
-    if os.path.isfile(REALM_STATE_FILE):
+    if os.path.isfile(realm_state_file()):
         try:
-            with open(REALM_STATE_FILE, "r", encoding="utf-8") as fh:
+            with open(realm_state_file(), "r", encoding="utf-8") as fh:
                 d = json.load(fh)
                 r = d.get("realm")
                 if r in ("intl", "cn"):
@@ -638,7 +650,7 @@ def save_persisted_realm(realm):
         CURRENT_REALM = realm
         try:
             os.makedirs(ACCOUNTS_DIR, exist_ok=True)
-            with open(REALM_STATE_FILE, "w", encoding="utf-8") as fh:
+            with open(realm_state_file(), "w", encoding="utf-8") as fh:
                 json.dump({"realm": realm, "updated_at": time.time(), "updated_iso": time.strftime("%Y-%m-%d %H:%M:%S")}, fh, indent=2)
             log("persisted active realm '%s' to disk" % realm)
         except Exception as exc:

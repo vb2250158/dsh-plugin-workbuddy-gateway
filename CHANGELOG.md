@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 — 2026-09-20
+
+- 修复 `--accounts-dir` 指定目录后，区域设置仍写入插件源码目录的问题；保存和重启读取均使用当前账号目录。
+- Fix realm persistence with `--accounts-dir`: both save and reload use the configured account directory, including directories selected after module import.
+- Add offline regression tests for save/reload and isolation between two account directories.
+- Publish this maintenance fork at `vb2250158/dsh-plugin-workbuddy-gateway`; upstream remains `Acoder416/dsh-plugin-workbuddy-gateway`.
+
 ## 0.2.2 — 2026-09-17
 
 - Persist HTTP 429 / business-code 6004 limits per account and model, using the upstream reset time and UTC offset, then Retry-After, then a configurable 300-second fallback (`WB_RATE_LIMIT_FALLBACK_SECONDS`). Other models remain eligible.

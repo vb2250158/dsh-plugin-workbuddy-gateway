@@ -200,7 +200,7 @@ export function mount(ctx, deps) {
     ['/health', false, route(['GET'], {
       handler: () => ({
         ok: true,
-        plugin: { version: '0.2.2', routeBase: ROUTE_BASE },
+        plugin: { version: '0.2.3', routeBase: ROUTE_BASE },
         gateway: gateway.snapshot(),
       }),
     })],

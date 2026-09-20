@@ -54,7 +54,7 @@ export const name = 'dsh-plugin-workbuddy-gateway'
 export const inject = ['webServer', 'settings']
 
 /** Plugin build marker, surfaced by `/health` so a stale mount is visible. */
-export const PLUGIN_VERSION = '0.2.2'
+export const PLUGIN_VERSION = '0.2.3'
 
 /**
  * Register the gateway supervisor, its routes, and its settings section.
