@@ -224,7 +224,7 @@ test('usable counts only accounts that can actually serve a request', async () =
             account({ uid: 'a' }),
             account({ uid: 'b', enabled: false }),
             account({ uid: 'c', inCooldown: true }),
-            account({ uid: 'd', lastError: 'token expired' }),
+            account({ uid: 'd', available: false, lastError: 'token expired' }),
             account({ uid: 'e' }),
           ],
         },
@@ -237,6 +237,26 @@ test('usable counts only accounts that can actually serve a request', async () =
     assert.equal(reading.account.usable, 2, 'only the healthy ones count as usable')
   } finally {
     stub.restore()
+  }
+})
+
+test('historical errors do not hide eligible accounts after cooldown', async () => {
+  for (const [entry, expected] of [
+    [account({ uid: 'restored', available: true, lastError: 'HTTP 403' }), 1],
+    [account({ uid: 'missing-token', available: false }), 0],
+    [account({ uid: 'legacy-restored', lastError: 'old SSL failure' }), 1],
+    [account({ uid: 'legacy-expired', expiresAt: 1, hasRefreshToken: false }), 0],
+  ]) {
+    const stub = stubGatewayFetch((url) => (url.includes('/accounts')
+      ? { body: { accounts: [entry] } }
+      : { body: { data: [] } }))
+    try {
+      const { server } = harness()
+      const reading = (await server.call(`${ROUTE_BASE}/state`)).payload.data
+      assert.equal(reading.account.usable, expected, entry.uid)
+    } finally {
+      stub.restore()
+    }
   }
 })
 

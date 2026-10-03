@@ -34,6 +34,8 @@ account pool with simulated upstream responses and no live credentials.
 accounts; request-local attempt tracking bounds retries without blocking the
 caller's next request. Authentication and rate-limit cooldowns are preserved.
 
+**Modifications in 0.2.3.** `wb_proxy.py` classifies upstream code 11140 as an account-level restriction, preserves readable error bodies, rotates and cools affected accounts, and avoids account cooldown for transport failures. `wb_accounts.py` shares read-only eligibility between status counts and selection, expires domestic check-in status at the local day boundary, and `wb_proxy.py` refreshes credits after a successful check-in and returns the updated account snapshot. Authentication and model-limit guards remain active; offline tests cover both client protocols, same-realm retries, check-in expiry, and credit refresh.
+
 **Modifications in 0.2.2.** `wb_accounts.py` stores per-account/model reset deadlines
 and serializes atomic saves. `wb_proxy.py` rotates on HTTP 429 or business code
 6004, skips restricted pairs until reset, and preserves error response bodies.

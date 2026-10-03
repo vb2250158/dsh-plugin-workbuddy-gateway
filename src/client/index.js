@@ -487,13 +487,20 @@ window.__ModuleLoader__.load({
     /**
      * 国内版账号当日积分是否已领取。
      *
-     * 网关保存的是最近一次确认的结果：`checkinClaimed` 为 true 表示已领取，
-     * 未确认过时回退到最近一次领取时间。国际版后端没有签到接口，两个字段恒为
-     * null，因此这里也恒为 false——调用方只在 `realm === 'cn'` 时展示它。
+     * 网关保存最近一次确认结果和时间；只有确认时间是本地今天且
+     * `checkinClaimed` 为 true 时才显示已领取。国际版后端没有签到接口，
+     * 两个字段恒为 null，因此这里也恒为 false——调用方只在 `realm === 'cn'` 时展示它。
      */
+    function localDateKey(date = new Date()) {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
     function checkinClaimedOf(entry) {
-      if (entry?.checkinClaimed === true) return true
-      return entry?.checkinClaimed === undefined && Boolean(entry?.lastCheckin)
+      if (entry?.checkinClaimed !== true) return false
+      return typeof entry.lastCheckin === 'string' && entry.lastCheckin.slice(0, 10) === localDateKey()
     }
 
     /**
@@ -610,6 +617,27 @@ window.__ModuleLoader__.load({
         }
       }, [])
 
+      /** Apply account snapshots returned by a completed gateway operation immediately. */
+      const applyAccountResult = React.useCallback((result) => {
+        const snapshot = Array.isArray(result?.accounts) ? result
+          : Array.isArray(result?.result?.accounts) ? result.result : null
+        if (!aliveRef.current || snapshot === null) return
+        const update = (current) => current.data === null ? current : {
+          ...current,
+          data: {
+            ...current.data,
+            account: { ...current.data.account, accounts: snapshot.accounts },
+          },
+        }
+        setState(update)
+        if (dataRef.current !== null) {
+          dataRef.current = {
+            ...dataRef.current,
+            account: { ...dataRef.current.account, accounts: snapshot.accounts },
+          }
+        }
+      }, [])
+
       /** Run one mutating action with busy state and error reporting. */
       const run = React.useCallback(async (label, action, successText) => {
         if (mutationRef.current.pending) return null
@@ -620,6 +648,7 @@ window.__ModuleLoader__.load({
         try {
           const result = await action()
           if (aliveRef.current) {
+            applyAccountResult(result)
             if (successText !== undefined) setMessage({ kind: 'ok', text: successText })
             refresh()
           }
@@ -635,7 +664,7 @@ window.__ModuleLoader__.load({
           mutationRef.current.version += 1
           if (aliveRef.current) setBusy(null)
         }
-      }, [refresh, t])
+      }, [applyAccountResult, refresh, t])
 
       const data = state.data
 

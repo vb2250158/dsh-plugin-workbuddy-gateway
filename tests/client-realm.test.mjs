@@ -17,6 +17,12 @@ import { runInNewContext } from 'node:vm'
 
 const source = readFileSync(new URL('../src/client/index.js', import.meta.url), 'utf8')
 
+const localDateKey = (date = new Date()) => {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
 /** The inert React stand-in the other client tests use. */
 function fakeReact(data) {
   let hookIndex = 0
@@ -66,7 +72,7 @@ function visibleText(node) {
 }
 
 /** One reading for a realm, with an account and a model in that realm. */
-function reading(realm, { claimed = false } = {}) {
+function reading(realm, { claimed = false, lastCheckin = null } = {}) {
   const other = realm === 'cn' ? 'intl' : 'cn'
   return {
     gateway: { state: 'running', baseUrl: 'http://127.0.0.1:18088/v1', pid: 1, uptimeMs: 1000, log: [] },
@@ -80,7 +86,7 @@ function reading(realm, { claimed = false } = {}) {
         enabled: true,
         credits: { remain: 12.34 },
         checkinClaimed: realm === 'cn' ? claimed : null,
-        lastCheckin: claimed ? '2026-09-16 12:00:00' : null,
+        lastCheckin: lastCheckin ?? (claimed ? `${localDateKey()} 12:00:00` : null),
       }],
       usable: 1,
     },
@@ -120,7 +126,7 @@ test('the CN-only controls appear only in the CN realm', () => {
 
 test('a CN account card shows whether today was claimed', () => {
   const claimed = render(reading('cn', { claimed: true }))
-  const claimTag = elements(claimed).find((node) => node?.props?.title === '2026-09-16 12:00:00')
+  const claimTag = elements(claimed).find((node) => node?.props?.title === `${localDateKey()} 12:00:00`)
   assert.ok(claimTag, 'the claimed tag carries the confirmation time')
   assert.equal(visibleText(claimTag), 'Checked in')
 
@@ -130,6 +136,11 @@ test('a CN account card shows whether today was claimed', () => {
   // The international realm never shows a claim state.
   const intl = render(reading('intl'))
   assert.ok(!/Checked in|Not checked in/.test(visibleText(intl)))
+})
+
+test('a previous day claim is shown as not checked in today', () => {
+  const oldClaim = render(reading('cn', { claimed: true, lastCheckin: '2000-01-01 12:00:00' }))
+  assert.match(visibleText(oldClaim), /Not checked in/)
 })
 
 test('the account and model sections describe the same realm as the setting', () => {

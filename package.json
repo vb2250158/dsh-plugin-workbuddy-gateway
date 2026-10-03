@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-workbuddy-gateway",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "WorkBuddy (workbuddy.ai / codebuddy.cn) subscription quota as a DSH model provider: supervises the local OpenAI-compatible gateway and exposes it as a settings page.",
   "license": "MIT",
   "repository": {

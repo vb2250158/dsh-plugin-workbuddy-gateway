@@ -101,7 +101,8 @@ export function mount(ctx, deps) {
   const usableIn = (accounts) => accounts.filter((account) => (
     account.enabled !== false
     && account.inCooldown !== true
-    && (account.lastError === undefined || account.lastError === null || account.lastError === '')
+    && (typeof account.available === 'boolean' ? account.available
+      : (!account.expiresAt || account.expiresAt * 1000 > Date.now() || account.hasRefreshToken === true))
   )).length
 
   /**
@@ -200,7 +201,7 @@ export function mount(ctx, deps) {
     ['/health', false, route(['GET'], {
       handler: () => ({
         ok: true,
-        plugin: { version: '0.2.3', routeBase: ROUTE_BASE },
+        plugin: { version: '0.2.4', routeBase: ROUTE_BASE },
         gateway: gateway.snapshot(),
       }),
     })],

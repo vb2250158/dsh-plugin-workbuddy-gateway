@@ -6,6 +6,12 @@ import { runInNewContext } from 'node:vm'
 
 const source = readFileSync(new URL('../src/client/index.js', import.meta.url), 'utf8')
 
+const localDateKey = (date = new Date()) => {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
 /** Render the lazy factory's settings tree without scheduling polling effects. */
 function render(accounts) {
   const data = {
@@ -65,10 +71,10 @@ test('account controls and realm selector stay inside the account card even with
 
 test('account card displays confirmed claim status and localized credits', () => {
   const tree = render([{ uid: 'sample', realm: 'cn', enabled: true,
-    checkinClaimed: true, lastCheckin: '2026-09-16 12:00:00', credits: { remain: 100 } }])
+    checkinClaimed: true, lastCheckin: `${localDateKey()} 12:00:00`, credits: { remain: 100 } }])
   // 签到状态现在是账号卡片上的标签，确认时间放在标签的 title 里。
   assert.match(visibleText(tree), /Checked in/)
-  const claimTag = elements(tree).find((node) => node?.props?.title === '2026-09-16 12:00:00')
+  const claimTag = elements(tree).find((node) => node?.props?.title === `${localDateKey()} 12:00:00`)
   assert.ok(claimTag, 'the check-in tag carries the confirmation time')
   assert.equal(visibleText(claimTag), 'Checked in')
   assert.match(visibleText(tree), /100 credits/)

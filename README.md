@@ -4,9 +4,9 @@
 
 中文 | [English](README.en.md)
 
-本仓库是 [Acoder416 上游](https://github.com/Acoder416/dsh-plugin-workbuddy-gateway) 的维护 fork。0.2.3 修复指定账号目录后区域设置的保存与重启读取。
+本仓库是 [Acoder416 上游](https://github.com/Acoder416/dsh-plugin-workbuddy-gateway) 的维护 fork。0.2.4 修复指定账号目录后区域设置的保存与重启读取。
 
-**当前版本：0.2.3。** 安装建议固定到 Git 标签 `v0.2.3`；回退方法见下文。此仓库提供源码安装，不要求安装插件市场。
+**当前版本：0.2.4。** 安装建议固定到 main 上的固定 Git 提交；回退方法见下文。此仓库提供源码安装，不要求安装插件市场。
 
 ## 功能
 
@@ -44,7 +44,7 @@ Windows 自动尝试 `python`、`python3`；macOS / Linux 自动尝试 `python3`
 ### 方式一：直接安装固定版本
 
 ```sh
-dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#v0.2.3"
+dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#<main-commit>"
 ```
 
 这个命令安装包依赖，**还需要启用插件**：编辑 profile 的 `package.json`，在现有 `dsh.profile.bundles` 数组末尾添加 `dsh-plugin-workbuddy-gateway`。保留原有字段和其他 bundle，下面仅展示相关部分：
@@ -70,7 +70,7 @@ dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#v0.2
 适合希望保留源码、手动更新或调试的用户。将源码放在长期保留的目录，后续不要删除或移动它。
 
 ```sh
-git clone --branch v0.2.3 https://github.com/vb2250158/dsh-plugin-workbuddy-gateway.git
+git clone --branch main https://github.com/vb2250158/dsh-plugin-workbuddy-gateway.git
 cd dsh-plugin-workbuddy-gateway
 npm run preflight
 ```
@@ -186,7 +186,7 @@ WorkBuddy 桌面端不必常驻。网关独立保存导入后的凭证；退出�
 
 ```sh
 # 升级到本版
-dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#v0.2.3"
+dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#<main-commit>"
 
 # 回退到已有旧版标签
 dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#v0.2.1"
@@ -197,7 +197,7 @@ dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#v0.2
 ```sh
 git status --short
 git fetch origin --tags
-git switch --detach v0.2.3
+git switch --detach <main-commit>
 # 回退时改为：git switch --detach v0.2.1
 ```
 
@@ -241,3 +241,5 @@ node scripts/check-package.mjs
 ## 来源与许可证
 
 插件使用 [MIT 许可证](LICENSE)。内置网关来自 [ardeyouxipianyi/workbuddy2api-intl](https://github.com/ardeyouxipianyi/workbuddy2api-intl)，亦为 MIT；本版包含凭证目录、导入积分同步和签到结果处理方面的本地修改，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+0.2.4 合并账号限制、网络错误与当天签到状态修复，并保留自定义账号目录的区域设置持久化。

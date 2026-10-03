@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.4 — 2026-10-03
+
+- Consolidate upstream error classification and current-day check-in fixes on main; retain custom-directory realm persistence.
+
+- Treat a stored domestic check-in as current only when its confirmation date is today; yesterday's status now expires automatically at the local day boundary.
+- Refresh domestic account credits immediately after a successful or already-claimed check-in and return the updated account snapshot to the settings page.
+- Apply account snapshots from completed operations immediately in the client, so check-in and credit changes appear without waiting for the polling interval.
+- Clarify that daily check-in and growth-task credit claiming are separate upstream operations; the latter can take longer because it runs multiple task requests.
+
+- Classify upstream code 11140 as an account-level WorkBuddy restriction when the official client also fails. Temporarily cool and rotate the affected account, preserve the upstream trace, and avoid describing it as a prompt/content error or invalid local API key.
+- Keep SSL disconnects, connection resets, and timeouts from cooling the entire account pool. Retain bounded same-realm attempts, authentication cooldowns, and per-model rate limits.
+- Share read-only credential eligibility between account listings and pool counts; expired cooldowns become eligible despite historical errors. Scope account endpoint counts to the requested realm.
+- Preserve readable upstream explanations and record exhausted-pool failures as HTTP 503 in usage logs.
+- Add offline regressions for content rejection, both client protocols, network retry, authentication guards, and account availability. Restart DSH after upgrading; account data requires no migration.
+
+
 ## 0.2.3 — 2026-09-20
 
 - 修复 `--accounts-dir` 指定目录后，区域设置仍写入插件源码目录的问题；保存和重启读取均使用当前账号目录。
