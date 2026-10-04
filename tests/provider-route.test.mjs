@@ -24,10 +24,9 @@ function fakeSettings(initial = { providers: {} }, { unregistered = false, failO
   return {
     calls,
     section: () => section,
-    get(namespace) {
-      if (namespace !== 'llm-pi-ai') throw new Error(`unexpected namespace ${namespace}`)
+    describe() {
       if (unregistered) throw new Error('settings namespace "llm-pi-ai" is not registered')
-      return section
+      return [{ ns: 'llm-pi-ai', value: section }]
     },
     async mutate(namespace, ops) {
       calls.push({ namespace, ops })

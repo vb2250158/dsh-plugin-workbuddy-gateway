@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.5
+
+- Update DSH compatibility requirements and interfaces for 0.2.1-alpha.1.
+
 ## 0.2.4 — 2026-10-03
 
 - Consolidate upstream error classification and current-day check-in fixes on main; retain custom-directory realm persistence.

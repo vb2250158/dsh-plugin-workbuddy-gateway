@@ -1,5 +1,7 @@
 # dsh-plugin-workbuddy-gateway
 
+This release requires DSH 0.2.1-alpha.1 or a compatible 0.2 release. See [compatibility details](docs/dsh-0.2-compatibility.md).
+
 在 DSH 的设置页管理 WorkBuddy 账号、本地网关和模型路由。网关将 WorkBuddy 国际版或国内版的订阅接口转换为 OpenAI 兼容接口，供 DSH 使用。
 
 中文 | [English](README.en.md)

@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url'
 import { Gateway, baseUrlFor } from './gateway.js'
 import { mount } from './routes.js'
 import { applyProvider, buildProviderEntry, currentProviderBaseUrl, describeProvider, PI_AI_NAMESPACE } from './provider-route.js'
-import { defineSchema } from './schema.js'
+import z from '@deepseek-ai/schemastery'
 import {
   API_KEY_REF,
   PROVIDER_ID,
@@ -45,7 +45,12 @@ import {
  * provider catalog serializes every registered schema with `toJSON()`, and a
  * plain function has none, which took the whole models settings page down.
  */
-const SECTION_SCHEMA = defineSchema(SETTINGS_BASE, (candidate) => normalizeSettings(candidate))
+export const Config = z.object({
+  port: z.number().min(1).max(65535).step(1).default(18088),
+  autoStart: z.boolean().default(true), providerSync: z.boolean().default(true),
+  gatewayDir: z.string().default(''), pythonPath: z.string().default(''),
+  realm: z.union([z.const('intl'), z.const('cn'), z.const(null)]).default(null),
+}).volatile()
 
 /** Cordis plugin name. */
 export const name = 'dsh-plugin-workbuddy-gateway'
@@ -54,7 +59,7 @@ export const name = 'dsh-plugin-workbuddy-gateway'
 export const inject = ['webServer', 'settings']
 
 /** Plugin build marker, surfaced by `/health` so a stale mount is visible. */
-export const PLUGIN_VERSION = '0.2.4'
+export const PLUGIN_VERSION = '0.2.5'
 
 /**
  * Register the gateway supervisor, its routes, and its settings section.
@@ -79,7 +84,7 @@ export function apply(ctx, config) {
    * mount time: the realm picker never echoed a switch, the account and model
    * reads kept querying the old realm, and the CN-only buttons never appeared.
    */
-  let readSettings = () => ({ ...SETTINGS_BASE, ...config })
+  const readSettings = () => config.get()
 
   /** Current resolved settings; re-derived on attach and on every committed change. */
   let current = normalizeSettings(readSettings())
@@ -197,7 +202,7 @@ export function apply(ctx, config) {
       // A port change must not leave a stale endpoint behind. Only the endpoint
       // is corrected here, not the model list, because the gateway may not be
       // running and the list can only come from it.
-      const section = ctx.settings.get(PI_AI_NAMESPACE)
+      const section = ctx.settings.describe().find(entry => entry.ns === PI_AI_NAMESPACE)?.value
       const entry = section?.providers?.[PROVIDER_ID]
       if (entry === undefined || entry === null) return
       await applyProvider({
@@ -214,26 +219,11 @@ export function apply(ctx, config) {
   // section synchronously through `setSource`. The web-server block below reads
   // `current.autoStart`, and a reversed order would compare the composition
   // default instead of the user's choice.
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(
-      ctx,
-      SETTINGS_NAMESPACE,
-      SECTION_SCHEMA,
-      { ...SETTINGS_BASE, ...config },
-      {
-        setSource: (source) => {
-          readSettings = source
-          syncCurrent()
-        },
-        onChange: () => {
-          syncCurrent()
-          // Routes are derived from the port, so a port change must not leave a
-          // stale baseURL behind in settings.yaml.
-          if (!current.providerSync) return
-          void refreshBaseUrl()
-        },
-      },
-    )
+  ctx.effect(() => ctx.settings.configure({ auto: false }, ctx.fiber))
+  ctx.on('settings/document-updated', namespace => {
+    if (namespace !== SETTINGS_NAMESPACE) return
+    syncCurrent()
+    if (current.providerSync) void refreshBaseUrl()
   })
 
   ctx.inject(['webServer'], (webCtx) => {

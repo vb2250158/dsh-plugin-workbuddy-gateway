@@ -32,7 +32,7 @@ const PROVIDERS_PATH = ['providers']
  */
 export function readProviderMap(settings) {
   try {
-    const section = settings.get(PI_AI_NAMESPACE)
+    const section = settings.describe().find(entry => entry.ns === PI_AI_NAMESPACE)?.value
     const providers = section?.providers
     return {
       ok: true,

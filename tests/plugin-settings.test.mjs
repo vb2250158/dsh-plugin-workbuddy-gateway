@@ -36,8 +36,8 @@ function makeHost({ autoStart = false } = {}) {
   }
 
   const settingsService = {
-    installSection: (_owner, _ns, _schema, _entry, hooks) => { state.hooks = hooks },
-    get: () => state.resolved,
+    configure: () => () => {},
+    describe: () => [],
     update: async (_ns, patch) => {
       state.patches.push(patch)
       state.resolved = { ...state.resolved, ...patch }
@@ -58,6 +58,8 @@ function makeHost({ autoStart = false } = {}) {
   }
 
   const ctx = {
+    settings: settingsService,
+    on: (_event, fn) => { state.hooks = { onChange: () => fn("workbuddy-gateway") } },
     logger: { warn() {}, info() {}, error() {} },
     get: (name) => (name === 'credentials' ? credentials : undefined),
     effect: () => () => {},
@@ -73,9 +75,9 @@ function makeHost({ autoStart = false } = {}) {
 /** Mount the plugin and prime the section with its own source thunk. */
 function mountPlugin(options) {
   const host = makeHost(options)
-  apply(host.ctx, {})
+  apply(host.ctx, { get: () => host.state.resolved })
   assert.ok(host.state.hooks, 'apply() must install the settings section')
-  host.state.hooks.setSource(() => host.state.resolved)
+  host.state.hooks.onChange()
   return host
 }
 
