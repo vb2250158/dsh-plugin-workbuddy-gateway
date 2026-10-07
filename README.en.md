@@ -189,3 +189,7 @@ On systems with only `python3`, run `python3 -m unittest discover -s tests -p 't
 See [CONTRIBUTING.md](CONTRIBUTING.md). Plugin and bundled gateway are MIT-licensed. Gateway upstream: [ardeyouxipianyi/workbuddy2api-intl](https://github.com/ardeyouxipianyi/workbuddy2api-intl). Local account-adapter changes are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 0.2.4 consolidates account restriction, network failure and current-day check-in fixes while retaining realm persistence in custom account directories.
+
+## Plugin display metadata
+
+The plugin list shows **WorkBuddy gateway** in English and **WorkBuddy 网关** in Chinese, following the DSH interface language. `locale/en.json` and `locale/zh.json` provide the title and description; `icon.svg` supplies self-contained artwork. The package exports and publishes these resources. The icon is adapted from Lucide; see [ICON_LICENSE.txt](ICON_LICENSE.txt).

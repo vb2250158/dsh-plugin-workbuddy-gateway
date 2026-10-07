@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "WorkBuddy gateway",
+    "description": "Manage the local WorkBuddy model gateway and use subscription quota."
+  }
+}

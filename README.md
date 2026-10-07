@@ -245,3 +245,7 @@ node scripts/check-package.mjs
 插件使用 [MIT 许可证](LICENSE)。内置网关来自 [ardeyouxipianyi/workbuddy2api-intl](https://github.com/ardeyouxipianyi/workbuddy2api-intl)，亦为 MIT；本版包含凭证目录、导入积分同步和签到结果处理方面的本地修改，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 0.2.4 合并账号限制、网络错误与当天签到状态修复，并保留自定义账号目录的区域设置持久化。
+
+## Plugin display metadata
+
+The plugin list shows **WorkBuddy gateway** in English and **WorkBuddy 网关** in Chinese, following the DSH interface language. `locale/en.json` and `locale/zh.json` provide the title and description; `icon.svg` supplies self-contained artwork. The package exports and publishes these resources. The icon is adapted from Lucide; see [ICON_LICENSE.txt](ICON_LICENSE.txt).

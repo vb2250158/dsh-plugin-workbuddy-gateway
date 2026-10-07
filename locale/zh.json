@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "WorkBuddy 网关",
+    "description": "管理本地 WorkBuddy 模型网关并使用订阅额度。"
+  }
+}
