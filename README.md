@@ -12,7 +12,7 @@ This release requires DSH 0.2.1-alpha.1 or a compatible 0.2 release. See [compat
 
 ## 功能
 
-- 在「设置 → WorkBuddy」启动、停止、重启网关，查看端口、进程和日志。
+- 在「插件 → WorkBuddy 网关 → 配置」启动、停止、重启网关，查看端口、进程和日志。
 - 从桌面端导入账号，或通过浏览器 OAuth 授权登录。
 - 显示账号积分余额、最近确认的签到领取状态，支持刷新积分和国内版签到。
 - 桌面账号导入时，国内版尝试签到，随后读取积分；国际版只读取积分。
@@ -113,7 +113,7 @@ pnpm --dir "$dsh_profile_dir" add "link:$dsh_plugin_dir"
 
 ## 第一次使用
 
-1. 打开「设置 → WorkBuddy」，确认网关已启动。默认监听 `127.0.0.1:18088`。
+1. 打开「插件 → WorkBuddy 网关 → 配置」，确认网关已启动。默认监听 `127.0.0.1:18088`。
 2. 选择国际版或国内版区域；两个区域的账号和模型分别管理。
 3. 点击「扫描桌面端账号」并导入，或选择「浏览器授权登录」并完成授权。
 4. 检查账号是否启用、是否有积分。导入后的同步需要上游接口可用；失败时可手动刷新积分或重试签到。
@@ -249,3 +249,7 @@ node scripts/check-package.mjs
 ## Plugin display metadata
 
 The plugin list shows **WorkBuddy gateway** in English and **WorkBuddy 网关** in Chinese, following the DSH interface language. `locale/en.json` and `locale/zh.json` provide the title and description; `icon.svg` supplies self-contained artwork. The package exports and publishes these resources. The icon is adapted from Lucide; see [ICON_LICENSE.txt](ICON_LICENSE.txt).
+
+## 插件设置入口
+
+在插件列表中点击本插件进入详情页，即可使用原有配置和操作界面；设置菜单不再重复显示该插件入口。

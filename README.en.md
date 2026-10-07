@@ -1,6 +1,6 @@
 # dsh-plugin-workbuddy-gateway
 
-Manage WorkBuddy accounts, a local OpenAI-compatible gateway, and DSH model routes from **Settings → WorkBuddy**.
+Manage WorkBuddy accounts, a local OpenAI-compatible gateway, and DSH model routes from **Plugins → WorkBuddy gateway**.
 
 [中文](README.md) | English
 
@@ -93,7 +93,7 @@ Alternatively, after installing the dependency, insert the plugin into the profi
 
 Changing realms updates the account list and model catalog. Automatic route maintenance also updates the DSH model picker; otherwise, sync the model route manually. The page shows the selected realm, active gateway realm, and model catalog realm separately. A switch that the running gateway does not confirm is not saved.
 
-1. Open Settings → WorkBuddy and start the gateway (default `127.0.0.1:18088`).
+1. Open Plugins → WorkBuddy gateway and start the gateway (default `127.0.0.1:18088`).
 2. Select the global or China realm.
 3. Scan and import a desktop credential, or complete browser OAuth.
 4. Check that the account is enabled and has credits.
@@ -193,3 +193,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Plugin and bundled gateway are MIT-licen
 ## Plugin display metadata
 
 The plugin list shows **WorkBuddy gateway** in English and **WorkBuddy 网关** in Chinese, following the DSH interface language. `locale/en.json` and `locale/zh.json` provide the title and description; `icon.svg` supplies self-contained artwork. The package exports and publishes these resources. The icon is adapted from Lucide; see [ICON_LICENSE.txt](ICON_LICENSE.txt).
+
+## Plugin configuration
+
+Open this plugin from the Plugins list to access its existing configuration and controls. Settings no longer duplicates its navigation entry.

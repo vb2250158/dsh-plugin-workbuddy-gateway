@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-workbuddy-gateway",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "WorkBuddy (workbuddy.ai / codebuddy.cn) subscription quota as a DSH model provider: supervises the local OpenAI-compatible gateway and exposes it as a settings page.",
   "license": "MIT",
   "repository": {
@@ -59,7 +59,10 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "platform": "web"
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
     }
   },
   "peerDependencies": {
@@ -67,7 +70,8 @@
     "@deepseek-ai/dsh-api-remotes": ">=0.2.1-alpha.1 <0.3.0",
     "@deepseek-ai/dsh-api-session-controller": ">=0.2.1-alpha.1 <0.3.0",
     "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.1-alpha.1 <0.3.0",
-    "@deepseek-ai/dsh-client-ui-session": ">=0.2.1-alpha.1 <0.3.0"
+    "@deepseek-ai/dsh-client-ui-session": ">=0.2.1-alpha.1 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.2.1-alpha.1 <0.3.0"
   },
   "icon": "./icon.svg"
 }

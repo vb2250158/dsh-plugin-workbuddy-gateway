@@ -6,7 +6,7 @@
  * profile composes the package. `react` is the only external, and it comes from
  * the loader's module table rather than a bundled copy.
  *
- * It contributes one section to the settings panel (`settings.section`): the
+ * It contributes the bundle's `plugins.bundle.config` page: the
  * gateway's lifecycle controls, its accounts, its model inventory, and the
  * `llm-pi-ai` route that puts those models in the picker. All data comes from
  * the host half over same-origin `fetch`; this file only renders and polls.
@@ -988,12 +988,7 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Register the page as a settings section.
-     *
-     * The settings shell exposes `settings.section`; registering into it is what
-     * puts this page next to 模型 and 外观. The registration is held by
-     * `slots.inject` so the section appears whenever the shell is present and
-     * disappears with the plugin.
+     * Register gateway controls on the bundle's Plugins page.
      *
      * @param {object} ctx - client context carrying the slot registry.
      */
@@ -1005,12 +1000,10 @@ window.__ModuleLoader__.load({
       } else {
         installStyles()
       }
-      ctx.slots.inject('settings.section', () => ctx.slots.register({
-        name: 'settings.section',
-        id: 'workbuddy-gateway',
-        order: 40,
-        label: () => copy().nav,
-      }, Section))
+      ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+        name: 'plugins.bundle.config',
+        key: 'dsh-plugin-workbuddy-gateway',
+        }, Section))
     }
 
     module.exports.name = 'dsh-plugin-workbuddy-gateway'
