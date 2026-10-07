@@ -253,3 +253,5 @@ The plugin list shows **WorkBuddy gateway** in English and **WorkBuddy 网关** 
 ## 插件设置入口
 
 在插件列表中点击本插件进入详情页，即可使用原有配置和操作界面；设置菜单不再重复显示该插件入口。
+
+The icon uses a centered 36 × 36 viewBox to leave more space around the artwork inside the plugin icon frame.
