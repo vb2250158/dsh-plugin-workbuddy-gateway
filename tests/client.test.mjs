@@ -13,7 +13,7 @@ const localDateKey = (date = new Date()) => {
 }
 
 /** Render the lazy factory's settings tree without scheduling polling effects. */
-function render(accounts) {
+function render(accounts, scan = null) {
   const data = {
     gateway: { state: 'running', log: [] },
     settings: { realm: 'cn', port: 18088 },
@@ -24,7 +24,13 @@ function render(accounts) {
   let section
   const react = {
     createElement: (type, props, ...children) => ({ type, props, children: children.flat(Infinity) }),
-    useState: (initial) => [hookIndex++ === 0 ? { phase: 'ready', data } : initial, () => {}],
+    useState: (initial) => {
+      const index = hookIndex++
+      if (index === 0) return [{ phase: 'ready', data }, () => {}]
+      // Section's fifth state slot stores the desktop scan result.
+      if (index === 4) return [scan, () => {}]
+      return [initial, () => {}]
+    },
     useRef: (current) => ({ current }),
     useCallback: (callback) => callback,
     useEffect: () => {},
@@ -90,4 +96,17 @@ test('account model limits show model names and hide expired deadlines', () => {
   assert.match(text, /limited-model rate limited until/)
   assert.doesNotMatch(text, /expired-model/)
   assert.match(text, /model restrictions and reset times/)
+})
+
+test('desktop scan renders encrypted nickname metadata as the file name', () => {
+  const tree = render([], {
+    detected: [{
+      path: 'C:\\auth\\workbuddy-desktop.info',
+      file: 'workbuddy-desktop.info',
+      nickname: { $wbEncrypted: 1 },
+      realmName: 'China',
+      valid: true,
+    }],
+  })
+  assert.match(visibleText(tree), /workbuddy-desktop\.info/)
 })

@@ -11,6 +11,7 @@ import os
 import threading
 import time
 from wb_tasks import do_cat_travel
+from wb_growth import GrowthCheckin
 
 
 class Scheduler:
@@ -24,7 +25,12 @@ class Scheduler:
         self.all_hours = sorted(list(set(self.checkin_hours + self.travel_hours + self.keepalive_hours + self.cat_hours)))
         self.enabled = True
         self._stop_event = threading.Event()
+        self._cycle_lock = threading.Lock()
         self._thread = None
+        self.growth = GrowthCheckin(
+            enabled=os.environ.get("WB_GROWTH_CHECKIN_ENABLED", "0") == "1",
+            retry_seconds=int(os.environ.get("WB_GROWTH_CHECKIN_RETRY_SECONDS", "300")),
+            max_checks=int(os.environ.get("WB_GROWTH_CHECKIN_MAX_CHECKS", "3")))
         self.last_run_time = None
         self.next_run_time = None
         self.logs = []
@@ -51,9 +57,11 @@ class Scheduler:
 
     def _run_loop(self):
         # 启动后先休眠 10 秒等待主服务就绪，然后执行初次检查
-        time.sleep(10)
+        if self._stop_event.wait(10):
+            return
         try:
-            self._execute_cycle("启动初次初始化巡检")
+            if self.enabled:
+                self._execute_cycle("启动初次初始化巡检")
         except Exception as exc:
             self.log(f"初次巡检异常: {exc}")
 
@@ -71,8 +79,28 @@ class Scheduler:
                         self._execute_cycle(reason)
                     except Exception as exc:
                         self.log(f"排程执行异常: {exc}")
-                    time.sleep(65) # 避开当前这一分钟重复触发
+                    self._stop_event.wait(65) # 避开当前这一分钟重复触发
+                self._execute_growth()
             self._stop_event.wait(30)
+
+    def _run_growth(self, acc):
+        """Publish only confirmed activity as success; keep uncertain outcomes visible."""
+        try:
+            result = self.growth.run(acc, self._stop_event)
+            if result:
+                self.log(f"成长打卡 [{acc.uid[:8]}]: {result['status']} ({result['reason'] or result['date']})")
+        except Exception as exc:
+            self.log(f"成长打卡执行失败 [{acc.uid[:8]}]: {type(exc).__name__}")
+
+    def _execute_growth(self):
+        """Poll due growth checks without repeating billing or travel operations."""
+        if self._stop_event.is_set() or not self._cycle_lock.acquire(blocking=False):
+            return
+        try:
+            for acc in list(self.pool.accounts) if self.pool else []:
+                self._run_growth(acc)
+        finally:
+            self._cycle_lock.release()
 
     def _calc_next_fire(self):
         now = time.localtime()
@@ -99,6 +127,15 @@ class Scheduler:
         return {"ok": True, "msg": "已触发后台调度执行"}
 
     def _execute_cycle(self, trigger_reason="周期巡检"):
+        """Skip overlapping triggers; successful check-ins persist across restarts."""
+        if self._stop_event.is_set() or not self._cycle_lock.acquire(blocking=False):
+            return
+        try:
+            self._run_cycle(trigger_reason)
+        finally:
+            self._cycle_lock.release()
+
+    def _run_cycle(self, trigger_reason):
         self.last_run_time = time.strftime("%Y-%m-%d %H:%M:%S")
         self.log(f"开始执行任务 ({trigger_reason})...")
         if not self.pool or not self.pool.accounts:
@@ -110,6 +147,10 @@ class Scheduler:
         travel_count = 0
 
         for acc in list(self.pool.accounts):
+            if self._stop_event.is_set():
+                break
+            if not acc.enabled:
+                continue
             uid8 = acc.uid[:8] if acc.uid else "?"
             # 1. 检查 Token 剩余寿命 (小于 2 小时自动刷新保活)
             exp = acc.expires_at or 0
@@ -123,18 +164,29 @@ class Scheduler:
 
             # 2. 如果是国内版账号，检查每日签到与猫猫旅行
             if acc.realm == "cn":
-                if acc.can_checkin():
+                self._run_growth(acc)
+                if not acc.checkin_claimed_today():
                     self.log(f"检测到国内版账号 [{uid8}] 今日尚未签到，执行自动签到...")
                     res = acc.checkin()
                     if res.get("ok"):
                         checkin_count += 1
                         self.log(f"✓ 账号 [{uid8}] 自动签到成功: {res.get('msg')}")
+                        try:
+                            credits = acc.fetch_credits()
+                        except Exception as exc:
+                            credits = {"ok": False, "error": str(exc)}
+                        if not credits.get("ok"):
+                            self.log(f"! 账号 [{uid8}] 签到后积分刷新失败: {credits.get('error')}")
                     else:
                         self.log(f"! 账号 [{uid8}] 自动签到未成功: {res.get('error') or res.get('msg')}")
                     time.sleep(1.0)
 
                 # 检查猫猫旅行
-                tr = do_cat_travel(acc)
+                try:
+                    tr = do_cat_travel(acc)
+                except Exception as exc:
+                    self.log(f"! 账号 [{uid8}] 猫猫日常失败: {exc}")
+                    continue
                 if tr.get("action") in ("claim", "depart"):
                     travel_count += 1
                     self.log(f"🐱 账号 [{uid8}] 猫猫日常处理: {tr.get('msg')}")

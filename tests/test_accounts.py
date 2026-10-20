@@ -222,3 +222,49 @@ class AccountTests(unittest.TestCase):
                 found = accounts.desktop_credential_candidates()
             self.assertEqual(found, [(os.path.join(directory, 'workbuddy-desktop-ai.info'), 'intl'),
                                      (os.path.join(directory, 'workbuddy-desktop.info'), 'cn')])
+
+    def test_desktop_scan_never_returns_object_nickname(self):
+        """Encrypted desktop profile metadata must not break the settings renderer."""
+        with tempfile.TemporaryDirectory() as directory:
+            credential = Path(directory) / 'workbuddy-desktop.info'
+            credential.write_text(json.dumps({
+                'auth': {'accessToken': 'not-a-jwt'},
+                'account': {'uid': 'account-uid', 'nickname': {'$wbEncrypted': 1}},
+            }), encoding='utf-8')
+            with patch.dict(os.environ, {'WORKBUDDY_DESKTOP_AUTH_DIR': directory}):
+                found = accounts.scan_desktop_credentials()
+            self.assertEqual(len(found), 1)
+            self.assertIsInstance(found[0]['nickname'], str)
+            self.assertEqual(found[0]['nickname'], '')
+
+    def test_encrypted_desktop_tokens_cannot_be_scanned_as_valid_or_imported(self):
+        for field in ('accessToken', 'refreshToken'):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                credential = Path(directory) / 'workbuddy-desktop.info'
+                blob = {'auth': {'accessToken': 'fake', field: {'$wbEncrypted': 1, 'envelope': 'private-data'}},
+                        'account': {'uid': 'test', 'nickname': {'$wbEncrypted': 1}}}
+                credential.write_text(json.dumps(blob), encoding='utf-8')
+                before = credential.read_bytes()
+                pool = accounts.AccountPool(str(Path(directory) / 'pool'))
+                with patch.dict(os.environ, {'WORKBUDDY_DESKTOP_AUTH_DIR': directory}), \
+                        patch.object(accounts, 'http_json', side_effect=AssertionError('no upstream request')):
+                    found = accounts.scan_desktop_credentials()
+                    self.assertFalse(found[0]['valid'])
+                    self.assertEqual(found[0]['errorCode'], 'desktop_credentials_encrypted')
+                    self.assertNotIn('private-data', json.dumps(found))
+                    with self.assertRaisesRegex(ValueError, 'Sign in via browser'):
+                        pool.import_desktop_credential(str(credential), realm='cn')
+                self.assertEqual(pool.accounts, [])
+                self.assertEqual(list((Path(directory) / 'pool').glob('*.json')), [])
+                self.assertEqual(credential.read_bytes(), before)
+
+    def test_plaintext_import_does_not_persist_encrypted_display_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            credential = Path(directory) / 'workbuddy-desktop.info'
+            credential.write_text(json.dumps({'auth': {'accessToken': 'fake'},
+                'account': {'uid': 'test', 'nickname': {'$wbEncrypted': 1, 'envelope': 'private-data'}}}), encoding='utf-8')
+            pool = accounts.AccountPool(str(Path(directory) / 'pool'))
+            with patch.object(accounts.Account, 'fetch_credits'):
+                account = pool.import_desktop_credential(str(credential), realm='intl')
+            self.assertEqual(account.nickname, '')
+            self.assertNotIn('private-data', Path(account.path).read_text())

@@ -38,10 +38,10 @@ function account(overrides = {}) {
 function stubGatewayFetch(respond) {
   const original = globalThis.fetch
   const calls = []
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options) => {
     const text = String(url)
     calls.push(text)
-    const { status = 200, body = {} } = respond(text) ?? {}
+    const { status = 200, body = {} } = respond(text, options) ?? {}
     return {
       ok: status >= 200 && status < 300,
       status,
@@ -134,6 +134,63 @@ test('normalizeSettings treats a non-object section as the defaults', () => {
   for (const value of [null, undefined, 'x', 7, []]) {
     assert.equal(normalizeSettings(value).port, DEFAULT_PORT)
   }
+})
+
+test('growth automation defaults off and validates verification limits', () => {
+  assert.equal(normalizeSettings({}).autoGrowthCheckin, false)
+  assert.equal(normalizeSettings({ autoGrowthCheckin: 'true' }).autoGrowthCheckin, false)
+  assert.equal(normalizeSettings({ autoGrowthCheckin: true }).autoGrowthCheckin, true)
+  assert.equal(normalizeSettings({ growthCheckinMaxChecks: 0 }).growthCheckinMaxChecks, 3)
+  assert.equal(normalizeSettings({ growthCheckinRetrySeconds: 60 }).growthCheckinRetrySeconds, 60)
+})
+
+test('growth settings reach the running gateway before being saved', async () => {
+  const policies = []
+  const stub = stubGatewayFetch((url, options) => {
+    assert.ok(url.endsWith('/scheduler/growth'))
+    const policy = JSON.parse(options.body)
+    policies.push(policy)
+    return { body: policy }
+  })
+  try {
+    const { server, updates } = harness()
+    for (const autoGrowthCheckin of [true, false]) {
+      const response = await server.call(`${ROUTE_BASE}/config`, {
+        method: 'POST', body: { autoGrowthCheckin },
+      })
+      assert.equal(response.statusCode, 200)
+      assert.equal(response.payload.data.settings.autoGrowthCheckin, autoGrowthCheckin)
+    }
+    assert.deepEqual(policies, [
+      { enabled: true, retrySeconds: 300, maxChecks: 3 },
+      { enabled: false, retrySeconds: 300, maxChecks: 3 },
+    ])
+    assert.deepEqual(updates, [{ autoGrowthCheckin: true }, { autoGrowthCheckin: false }])
+  } finally { stub.restore() }
+})
+
+test('an unsupported gateway cannot silently accept the growth switch', async () => {
+  const stub = stubGatewayFetch(() => ({ body: {} }))
+  try {
+    const { server, updates } = harness()
+    const response = await server.call(`${ROUTE_BASE}/config`, { method: 'POST', body: { autoGrowthCheckin: true } })
+    assert.equal(response.statusCode, 500)
+    assert.equal(updates.length, 0)
+  } finally { stub.restore() }
+})
+
+test('invalid growth policy values never reach the gateway or settings store', async () => {
+  const stub = stubGatewayFetch(() => { throw new Error('unexpected network') })
+  try {
+    for (const body of [{ autoGrowthCheckin: 'true' }, { growthCheckinMaxChecks: 0 },
+      { growthCheckinMaxChecks: 11 }, { growthCheckinRetrySeconds: 29 }, { growthCheckinRetrySeconds: 3601 }]) {
+      const { server, updates } = harness()
+      const response = await server.call(`${ROUTE_BASE}/config`, { method: 'POST', body })
+      assert.equal(response.statusCode, 400)
+      assert.equal(updates.length, 0)
+    }
+    assert.equal(stub.calls.length, 0)
+  } finally { stub.restore() }
 })
 
 test('every route is mounted under the plugin prefix', () => {

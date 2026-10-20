@@ -105,6 +105,12 @@ window.__ModuleLoader__.load({
         checkin: '签到',
         checkedIn: (time) => `已签到${time ? ` · ${time}` : ''}`,
         notCheckedIn: '未签到',
+        autoGrowthCheckin: '自动成长打卡（国内个人账号）',
+        growthNote: '启动后自动检查；每天最多上报一次活跃，官方确认后才显示已打卡。开启后在下一轮后台检查生效。',
+        growthOff: '成长打卡：自动已关闭',
+        growthUnsupported: '成长打卡：企业账号不适用',
+        growthStates: { not_started: '成长打卡：今日尚未检查', pending: '成长打卡：待官方确认', confirmed: '成长打卡：今日已确认', failed: '成长打卡：今日未确认，自动检查已停止' },
+        growthReasons: { not_recorded: '官方尚未计入', request_failed: '网络请求失败', auth_required: '请重新登录账号', upstream_rejected: '官方接口拒绝请求', invalid_response: '官方返回格式或日期不符合预期', invalid_state: '本地打卡记录异常，请检查账号文件', storage_failed: '打卡记录保存失败，请检查磁盘或文件权限' },
         enableAll: '全部启用',
         disableAll: '全部停用',
         enable: '启用',
@@ -112,6 +118,8 @@ window.__ModuleLoader__.load({
         creditBalance: (value) => `${value} 积分`,
         taskClaimed: '积分任务已执行，请刷新积分查看结果。',
         scanNote: '只读取本机 WorkBuddy 桌面端已有的凭证，不会修改它。',
+        scanEmpty: '未找到桌面端凭证。请先登录桌面端后重新扫描，或使用「浏览器授权登录」。',
+        scanEncrypted: '桌面端凭证已加密，无法直接导入。请选择对应区域，使用「浏览器授权登录」添加账号。',
         import: '导入',
         imported: (name) => `已导入 ${name}`,
         remove: '移除',
@@ -218,6 +226,12 @@ window.__ModuleLoader__.load({
         checkin: 'Check in',
         checkedIn: (time) => `Checked in${time ? ` · ${time}` : ''}`,
         notCheckedIn: 'Not checked in',
+        autoGrowthCheckin: 'Automatic growth check-in (CN personal accounts)',
+        growthNote: 'Checks on startup; reports activity at most once a day and requires official confirmation. Changes apply on the next background check.',
+        growthOff: 'Growth check-in: automation off',
+        growthUnsupported: 'Growth check-in: unavailable for enterprise accounts',
+        growthStates: { not_started: 'Growth check-in: not checked today', pending: 'Growth check-in: awaiting official confirmation', confirmed: 'Growth check-in: confirmed today', failed: 'Growth check-in: unconfirmed today; automatic checks stopped' },
+        growthReasons: { not_recorded: 'Not recorded by the official service yet', request_failed: 'Network request failed', auth_required: 'Sign in to the account again', upstream_rejected: 'The official service rejected the request', invalid_response: 'Unexpected official response or calendar date', invalid_state: 'Invalid local activity record; check the account file', storage_failed: 'Could not save activity; check disk space and file permissions' },
         enableAll: 'Enable all',
         disableAll: 'Disable all',
         enable: 'Enable',
@@ -225,6 +239,8 @@ window.__ModuleLoader__.load({
         creditBalance: (value) => `${value} credits`,
         taskClaimed: 'Credit tasks ran; refresh credits to see the result.',
         scanNote: 'Reads credentials the local WorkBuddy desktop app already has, and does not modify them.',
+        scanEmpty: 'No desktop credentials found. Sign in to the desktop app and scan again, or use "Sign in via browser".',
+        scanEncrypted: 'Desktop credentials are encrypted and cannot be imported directly. Select the matching region and use "Sign in via browser" to add the account.',
         import: 'Import',
         imported: (name) => `Imported ${name}`,
         remove: 'Remove',
@@ -284,6 +300,13 @@ window.__ModuleLoader__.load({
      */
     function copy() {
       return COPY_BY_LANGUAGE[LANGUAGE]
+    }
+
+    /** Return a value that is safe to place directly in a React text node. */
+    function textValue(value, fallback = '') {
+      if (typeof value === 'string') return value || fallback
+      if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+      return fallback
     }
 
     /** `12s` / `3m04s` / `2h11m` / `4d03h`. */
@@ -442,7 +465,14 @@ window.__ModuleLoader__.load({
     async function postJson(path, body) {
       const response = await fetch(`${BASE}${path}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        // The official Desktop bridge strips Origin before forwarding to the
+        // local plugin server. This non-safelisted marker survives that hop,
+        // so the host can still distinguish the plugin's own requests from
+        // cross-site form submissions.
+        headers: {
+          'content-type': 'application/json',
+          'X-DSH-WorkBuddy-Request': 'desktop',
+        },
         body: JSON.stringify(body ?? {}),
       })
       const payload = await response.json().catch(() => null)
@@ -821,6 +851,18 @@ window.__ModuleLoader__.load({
             action(t.enableAll, () => void run('enable-all', () => postJson('/accounts/set-all', { enabled: true }), t.saved), undefined),
             action(t.disableAll, () => void run('disable-all', () => postJson('/accounts/set-all', { enabled: false }), t.saved), undefined)),
 
+          h('label', { className: 'dsw-wb-check' },
+            h('input', {
+              type: 'checkbox',
+              checked: settings.autoGrowthCheckin === true,
+              disabled: busy !== null,
+              onChange: (event) => void run('config', async () => {
+                const result = await postJson('/config', { autoGrowthCheckin: event.target.checked })
+                applyConfigResult(result)
+              }),
+            }), t.autoGrowthCheckin),
+          h('p', { className: 'dsw-wb-note' }, t.growthNote),
+
           // 区域选择放在这张卡片里而不是网关卡片：它过滤的正是下面这张账号列表。
           h('div', { className: 'dsw-wb-field' },
             h('span', { className: 'dsw-wb-label' }, t.realm),
@@ -868,6 +910,13 @@ window.__ModuleLoader__.load({
                   [entry.realmName ?? entry.realm, entry.expiresIn === undefined ? null : t.expires(entry.expiresIn),
                     entry.credits?.remain === undefined ? null : t.creditBalance(entry.credits.remain)]
                     .filter(Boolean).join(' · ')),
+                entry.realm === 'cn'
+                  ? h('p', { className: 'dsw-wb-note', 'data-growth-status': entry.growthCheckin?.status ?? 'not_started' },
+                      entry.enterpriseId ? t.growthUnsupported
+                        : entry.growthCheckin?.status !== 'confirmed' && settings.autoGrowthCheckin !== true ? t.growthOff
+                        : [t.growthStates[entry.growthCheckin?.status] ?? t.growthStates.not_started,
+                            t.growthReasons[entry.growthCheckin?.reason]].filter(Boolean).join(' · '))
+                  : null,
                 ...Object.entries(entry.modelRateLimits ?? {})
                   .filter(([, resetAt]) => typeof resetAt === 'number' && Number.isFinite(resetAt) && resetAt * 1000 > Date.now())
                   .map(([model, resetAt]) => h('p', { key: `limit-${model}`, className: 'dsw-wb-note' },
@@ -898,14 +947,17 @@ window.__ModuleLoader__.load({
           h('p', { className: 'dsw-wb-note' }, t.scanNote),
 
           scan !== null && Array.isArray(scan.detected) && scan.detected.length > 0
-            ? h('div', { className: 'dsw-wb-list' }, scan.detected.map((found) => h('div', {
-                key: found.path,
+            ? h('div', { className: 'dsw-wb-list' }, scan.detected
+              .filter((found) => found !== null && typeof found === 'object')
+              .map((found) => h('div', {
+                key: textValue(found.path, textValue(found.file, 'desktop-credential')),
                 className: 'dsw-wb-account',
               },
                 h('div', { className: 'dsw-wb-accountTop' },
-                  h('span', { className: 'dsw-wb-accountName' }, found.nickname ?? found.file)),
+                  h('span', { className: 'dsw-wb-accountName' }, textValue(found.nickname, textValue(found.file, '—')))),
                 h('p', { className: 'dsw-wb-note' },
-                  [found.realmName, found.expiresIn === undefined ? null : t.expires(found.expiresIn), found.valid === false ? found.error : null]
+                  [textValue(found.realmName), found.expiresIn == null ? null : t.expires(textValue(found.expiresIn)),
+                    found.valid === false ? (found.errorCode === 'desktop_credentials_encrypted' ? t.scanEncrypted : textValue(found.error)) : null]
                     .filter(Boolean).join(' · ')),
                 h('div', { className: 'dsw-wb-actions' },
                   h('button', {
@@ -915,9 +967,9 @@ window.__ModuleLoader__.load({
                     onClick: () => void run('import', async () => {
                       await postJson('/accounts/import', { path: found.path, realm: found.realm })
                       setScan(null)
-                    }, t.imported(found.nickname ?? found.file)),
+                    }, t.imported(textValue(found.nickname, textValue(found.file, 'desktop credential')))),
                   }, t.import)))))
-            : null),
+            : scan !== null ? h('p', { className: 'dsw-wb-notice', role: 'status' }, t.scanEmpty) : null),
 
         // 模型路由。
         h('section', { key: 'providerCard', className: 'dsw-wb-card' },

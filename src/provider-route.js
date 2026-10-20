@@ -32,7 +32,12 @@ const PROVIDERS_PATH = ['providers']
  */
 export function readProviderMap(settings) {
   try {
-    const section = settings.describe().find(entry => entry.ns === PI_AI_NAMESPACE)?.value
+    const descriptor = settings.describe({ redactSecrets: false })
+      .find((entry) => entry.ns === PI_AI_NAMESPACE)
+    if (descriptor === undefined) {
+      return { ok: false, reason: `settings namespace "${PI_AI_NAMESPACE}" is not registered` }
+    }
+    const section = descriptor.value
     const providers = section?.providers
     return {
       ok: true,

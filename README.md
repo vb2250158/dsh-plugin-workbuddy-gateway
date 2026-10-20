@@ -1,18 +1,14 @@
 # dsh-plugin-workbuddy-gateway
 
-This release requires DSH 0.2.1-alpha.1 or a compatible 0.2 release. See [compatibility details](docs/dsh-0.2-compatibility.md).
-
 在 DSH 的设置页管理 WorkBuddy 账号、本地网关和模型路由。网关将 WorkBuddy 国际版或国内版的订阅接口转换为 OpenAI 兼容接口，供 DSH 使用。
 
 中文 | [English](README.en.md)
 
-本仓库是 [Acoder416 上游](https://github.com/Acoder416/dsh-plugin-workbuddy-gateway) 的维护 fork。0.2.4 修复指定账号目录后区域设置的保存与重启读取。
-
-**当前版本：0.2.4。** 安装建议固定到 main 上的固定 Git 提交；回退方法见下文。此仓库提供源码安装，不要求安装插件市场。
+**当前版本：0.3.0。** 已适配新版 Config 设置接口，并通过 Windows 官方安装版 DSH `0.2.1-rc.2` 的配置读写、模型路由及重启验证。安装请固定到 Git 标签 `v0.3.0`。此仓库提供源码安装，不要求安装插件市场。
 
 ## 功能
 
-- 在「插件 → WorkBuddy 网关 → 配置」启动、停止、重启网关，查看端口、进程和日志。
+- 在「设置 → WorkBuddy」启动、停止、重启网关，查看端口、进程和日志。
 - 从桌面端导入账号，或通过浏览器 OAuth 授权登录。
 - 显示账号积分余额、最近确认的签到领取状态，支持刷新积分和国内版签到。
 - 桌面账号导入时，国内版尝试签到，随后读取积分；国际版只读取积分。
@@ -72,7 +68,7 @@ dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#<mai
 适合希望保留源码、手动更新或调试的用户。将源码放在长期保留的目录，后续不要删除或移动它。
 
 ```sh
-git clone --branch main https://github.com/vb2250158/dsh-plugin-workbuddy-gateway.git
+git clone --branch v0.3.0 https://github.com/Acoder416/dsh-plugin-workbuddy-gateway.git
 cd dsh-plugin-workbuddy-gateway
 npm run preflight
 ```
@@ -113,25 +109,43 @@ pnpm --dir "$dsh_profile_dir" add "link:$dsh_plugin_dir"
 
 ## 第一次使用
 
-1. 打开「插件 → WorkBuddy 网关 → 配置」，确认网关已启动。默认监听 `127.0.0.1:18088`。
+1. 打开「设置 → WorkBuddy」，确认网关已启动。默认监听 `127.0.0.1:18088`。
 2. 选择国际版或国内版区域；两个区域的账号和模型分别管理。
 3. 点击「扫描桌面端账号」并导入，或选择「浏览器授权登录」并完成授权。
 4. 检查账号是否启用、是否有积分。导入后的同步需要上游接口可用；失败时可手动刷新积分或重试签到。
 5. 点击「写入模型路由」（开启自动维护时会自动尝试写入），刷新页面后在 DSH 模型选择器中选择模型。
 
+网关启动和重启时会在监听前应用所选区域，区域确认成功后才显示「运行中」；确认失败会停止网关并显示错误。区域状态保存在账号目录的 `active_realm.json` 中；未指定区域时读取该记录。
+
 ### 积分与签到
+
+开启「随 dsh 启动」后，网关启动约 10 秒会自动为已启用的国内版账号签到，无需打开设置页。签到成功后刷新积分，并保存当天记录；同一天重新打开 DSH 会跳过已签到账号。日期按电脑本地时间计算，国际版和停用账号不参与。失败不会标记为已签到，下次启动或既有定时巡检会重试，也可手动签到；网络和登录凭证需要有效。网关持续运行时还会按既有排程巡检。
 
 「刷新积分」查询余额；上游下发的精确值保留到小数点后两位，已失效的资源包不计入可用余额。「签到」调用国内版每日领取接口。上游返回 `code: 10001`（包括 HTTP 错误响应）时，表示当天已经领取，插件也会保存该结果。
 
 刷新积分需要实时请求上游，每个账号一次，连接不稳定时会先重试再返回结果。因此「刷新全部积分」在账号较多或网络较差时（例如经由代理访问国际版）可能要等待较久，也可能失败；只关心一个账号时，用账号卡片上的「刷新积分」。
 
-账号卡片显示的是最近保存的领取状态和确认时间，并非持续查询官方签到状态。历史时间不代表今天已领取；需要时点击签到重新确认。国际版不提供此签到功能。
+账号卡片显示的是最近保存的领取状态和确认时间；国内版会按本地日期判断，昨天或更早的记录在今天自动显示为「未签到」，不会跨天沿用。页面读取本地状态不会额外请求上游；需要立即确认时点击签到。国际版不提供此签到功能。
 
 「领取积分」会调用内置网关的成长任务流程，与每日签到是不同操作。它依赖上游活动接口，耗时和可用性可能变化；失败时查看操作提示，不保证获得积分。
+
+### 自动成长打卡
+
+在账号区开启「自动成长打卡（国内个人账号）」后，网关在启动巡检和后续后台检查中查询官方当天活跃记录；尚未活跃时上报一次聊天活跃事件，再查询官方是否计入。只有官方返回当天 `is_active: true` 才显示「今日已确认」。它与每日积分签到分别记录，不调用模型，也不自动兑换奖励、使用补签卡或抽奖。默认关闭，只处理已启用、已登录的国内个人账号。
+
+日期按北京时间计算。每个账号每天最多上报一次，发送前保存记录；即使请求超时或重启，也只继续核验，不重复上报。默认最多检查三轮，未确认时每隔五分钟重新检查；全部失败后显示原因并停止当天自动检查。关闭开关或停止网关会阻止后续请求，已经发送的请求不能撤回。官方接口变化、网络或凭证问题可能使打卡无法确认。当天已在官方客户端完成活跃的账号直接确认并跳过上报。
+
+设置保存在 `workbuddy-gateway` 命名空间：`autoGrowthCheckin` 是独立开关；`growthCheckinRetrySeconds` 默认 `300`，范围 `30–3600`；`growthCheckinMaxChecks` 默认 `3`，范围 `1–10`。设置页切换开关立即更新运行中的内置网关；直接修改配置文件在重启后应用。新功能需要更新插件并重启 DSH；自定义 `gatewayDir` 也必须提供相应调度接口。
+
+插件兼容新版 DSH 的 profile Config 表单和旧版设置分区。新版通过导出的 volatile `Config` 和 `settings.configure()` 注册页面，按实际插件 entry id 更新配置，并将设置写入当前 profile 的 `cordis.patch.yml`；只有提供 `installSection()` 的旧宿主才使用该接口。配置监听跟随插件实例，在设置服务替换时不会重复注册。
+
+在源码目录运行 `node scripts/verify-profile-settings.mjs <已构建的dsh-CLI.js或桌面版dsh.cmd路径>` 可验证真实宿主的加载、HTTP 配置读写、外部修改、模型路由和重启恢复。测试使用临时 profile、临时 HTTP 端口和空凭据，不启动网关、不读取真实账号，也不调用模型。
 
 ### 桌面端凭证目录
 
 扫描只识别目录中的 `workbuddy-desktop-ai.info`（国际版）和 `workbuddy-desktop.info`（国内版）。
+
+新版桌面端可能将昵称和登录令牌保存为 `$wbEncrypted` 加密对象。插件会用文件名代替不可读的昵称；登录令牌加密时显示提示并禁用导入。请选择对应区域，点击插件内的「浏览器授权登录」添加账号。插件不解密或修改桌面端文件，也不会读取带时间戳的备份或 `.logged-out` 文件。未找到凭证时会显示提示；明文凭证仍可直接导入。
 
 | 平台 | 默认目录 |
 |---|---|
@@ -165,7 +179,9 @@ dsh --profile web
 
 同区所有候选账号都被该模型的限流记录阻止时，后续请求直接返回 `429`，错误信息包含最早的 `resetAt`（Unix 秒），到期前不再请求上游。多个账号均返回 `429` 不能据此判断为共享 IP 限流；各账号的恢复时间分别保存。
 
-上游连接阶段遇到 `401`、`403` 或网络异常时，保留原有账号错误处理并尝试其他账号。`502`、`503`、`504` 也会尝试其他账号，但不将账号置入冷却。一次请求中每个候选账号最多尝试一次；没有其他可用账号或同一区域全部失败时仍返回错误。其他 HTTP 错误、流式响应开始后的失败不保证切换；账号不会跨区域使用。
+上游业务码 `11140` 结合官方客户端同样报错时，应解释为账号被上游风控或限制，不能归因于提示词。网关会标记该账号暂时不可用、尝试同区其他账号，并返回上游的 Trace ID 和原始说明；DSH 不再将它显示成 API 密钥无效。该限制需要联系 WorkBuddy 官方处理，修改提示词、重试或切换本地模型无法解除。其他 `401`、`403` 保留鉴权冷却并尝试同区其他账号；`502`、`503`、`504`、SSL 断连和连接超时会尝试其他账号，但不使账号进入冷却。一次请求中每个候选账号最多尝试一次；全部失败时仍返回错误。流式响应开始后不会重放请求，账号不会跨区域使用。
+
+可用账号数排除停用、冷却、缺少令牌及已过期且无法刷新的账号；历史错误本身不会阻止冷却结束后的重试。可刷新凭证只表示允许尝试刷新，不保证刷新或模型请求成功。积分余额、模型限流和账号可用状态分别显示。
 
 WorkBuddy 桌面端不必常驻。网关独立保存导入后的凭证；退出桌面端不保证这些凭证立即失效。
 
@@ -187,11 +203,11 @@ WorkBuddy 桌面端不必常驻。网关独立保存导入后的凭证；退出�
 直接安装方式：
 
 ```sh
-# 升级到本版
+# 安装当前版本
 dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#<main-commit>"
 
-# 回退到已有旧版标签
-dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#v0.2.1"
+# 回退（仅适用于仍提供旧设置接口的 DSH）
+dsh plugin --profile web add "github:Acoder416/dsh-plugin-workbuddy-gateway#v0.2.6"
 ```
 
 本地 `link:` 方式，在插件源码目录执行：
@@ -199,13 +215,13 @@ dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#v0.2
 ```sh
 git status --short
 git fetch origin --tags
-git switch --detach <main-commit>
-# 回退时改为：git switch --detach v0.2.1
+git switch --detach v0.3.0
+# 旧宿主回退时改为：git switch --detach v0.2.6
 ```
 
 如果存在本地修改，先自行保存，避免覆盖。切换版本后重启 DSH 并刷新页面。`link:` 安装的版本由本地目录决定，重新安装其他目录中的副本不会更新正在使用的插件。
 
-回退代码不会撤销积分领取、还原账号操作或自动恢复模型路由。需要恢复配置时使用自己的备份。版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+DSH `0.2.1-rc.2` 不支持 `v0.2.6` 使用的旧设置接口，请保留 `v0.3.0`。回退代码不会撤销积分领取、还原账号操作或自动恢复模型路由。需要恢复配置时使用自己的备份。版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 排障
 
@@ -243,15 +259,3 @@ node scripts/check-package.mjs
 ## 来源与许可证
 
 插件使用 [MIT 许可证](LICENSE)。内置网关来自 [ardeyouxipianyi/workbuddy2api-intl](https://github.com/ardeyouxipianyi/workbuddy2api-intl)，亦为 MIT；本版包含凭证目录、导入积分同步和签到结果处理方面的本地修改，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-
-0.2.4 合并账号限制、网络错误与当天签到状态修复，并保留自定义账号目录的区域设置持久化。
-
-## Plugin display metadata
-
-The plugin list shows **WorkBuddy gateway** in English and **WorkBuddy 网关** in Chinese, following the DSH interface language. `locale/en.json` and `locale/zh.json` provide the title and description; `icon.svg` supplies self-contained artwork. The package exports and publishes these resources. The icon is adapted from Lucide; see [ICON_LICENSE.txt](ICON_LICENSE.txt).
-
-## 插件设置入口
-
-在插件列表中点击本插件进入详情页，即可使用原有配置和操作界面；设置菜单不再重复显示该插件入口。
-
-The icon uses a centered 36 × 36 viewBox to leave more space around the artwork inside the plugin icon frame.

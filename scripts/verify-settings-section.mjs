@@ -26,6 +26,11 @@ const dir = mkdtempSync(join(tmpdir(), 'wb-schema-'))
 const file = join(dir, 'settings.yaml')
 writeFileSync(file, 'llm-pi-ai:\n  providers: {}\n', 'utf8')
 
+/** Read one registered section through the current settings descriptor API. */
+function readSection(settings, namespace) {
+  return settings.describe({ redactSecrets: false }).find((entry) => entry.ns === namespace)?.value
+}
+
 const ctx = new Context()
 await ctx.plugin(FileSettingsProvider, { path: file, watch: false })
 
@@ -57,7 +62,7 @@ ctx.settings.installSection(
   { setSource: () => {}, onChange: () => {} },
 )
 
-check('the section resolves through the schema', ctx.settings.get(SETTINGS_NAMESPACE).port === SETTINGS_BASE.port)
+check('the section resolves through the schema', readSection(ctx.settings, SETTINGS_NAMESPACE)?.port === SETTINGS_BASE.port)
 
 let descriptors
 try {
@@ -95,7 +100,7 @@ try {
   writeOk = false
   console.log('   update failed:', error.message)
 }
-check('a settings write still succeeds', writeOk && ctx.settings.get(SETTINGS_NAMESPACE).port === 19000)
+check('a settings write still succeeds', writeOk && readSection(ctx.settings, SETTINGS_NAMESPACE)?.port === 19000)
 
 await ctx.stop?.()
 console.log(failed ? 'RESULT: FAILED' : 'RESULT: OK')

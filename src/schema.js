@@ -65,27 +65,46 @@ function dictFor(defaults) {
  *   resolves to.
  * @param {(candidate: unknown) => object} [admit] - the admission step; defaults
  *   to filling missing keys from `defaults`.
+ * @param {{volatile?: boolean}} [options] - expose flat primitive settings as a live Cordis Config reference.
  * @returns {Function & {type: string, meta: object, dict: object, toJSON: Function}}
  *   a callable schema node.
  */
-export function defineSchema(defaults, admit) {
+export function defineSchema(defaults, admit, { volatile = false } = {}) {
   const resolve = admit ?? ((candidate) => ({ ...defaults, ...(candidate ?? {}) }))
 
   // A schemastery schema is a function carrying schema data as properties, so
   // the admission call and the introspection both work off one object.
-  const schema = (candidate) => resolve(candidate)
+  const schema = (candidate) => {
+    const value = resolve(candidate)
+    if (!volatile) return value
+    // Cordis shares this reference protocol across module copies. Keeping this
+    // adapter local supports older profiles without adding a runtime dependency.
+    // This plugin's normalized settings contain only primitive values.
+    let current = Object.freeze({ ...value })
+    return Object.freeze({
+      get: () => current,
+      [Symbol.for('cosmokit.volatile.write')]: (next) => { current = next },
+    })
+  }
   schema.type = 'object'
-  schema.meta = { default: { ...defaults } }
+  schema.meta = { default: { ...defaults }, ...volatile ? { volatile: true } : {} }
   schema.dict = dictFor(defaults)
-  schema.toJSON = () => ({
-    uid: ROOT_UID,
-    refs: {
-      [ROOT_UID]: {
-        type: 'object',
-        meta: { default: { ...defaults } },
-        dict: dictFor(defaults),
-      },
-    },
-  })
+  schema.toJSON = () => {
+    const refs = {}
+    const encode = (node, uid) => {
+      const record = { type: node.type, meta: { ...node.meta } }
+      refs[uid] = record
+      if (node.dict) record.dict = Object.fromEntries(Object.entries(node.dict)
+        .map(([key, child]) => [key, encode(child, `${uid}/${key}`)]))
+      if (node.inner) record.inner = encode(node.inner, `${uid}/inner`)
+      return uid
+    }
+    encode(schema, ROOT_UID)
+    return { uid: ROOT_UID, refs }
+  }
+  // Loader recognizes Schemastery's graph protocol when deciding whether a
+  // Config change can update its live reference without remounting the plugin.
+  schema[Symbol.for('schemastery')] = true
+  schema['~standard'] = { version: 1, vendor: 'schemastery', validate: (value) => ({ value: schema(value) }) }
   return schema
 }

@@ -86,3 +86,15 @@ test('the serialized defaults mirror the section base', () => {
   const { refs, uid } = schema.toJSON()
   assert.deepEqual(refs[uid].meta.default, { ...SETTINGS_BASE })
 })
+
+test('live Config accepts the standard validator and retains a replaceable immutable value', () => {
+  const live = defineSchema(SETTINGS_BASE, normalizeSettings, { volatile: true })
+  const ref = live['~standard'].validate({ autoStart: false }).value
+  assert.equal(ref.get().autoGrowthCheckin, false)
+  assert.ok(Object.isFrozen(ref.get()))
+  const next = live({ autoGrowthCheckin: true }).get()
+  ref[Symbol.for('cosmokit.volatile.write')](next)
+  assert.equal(ref.get().autoGrowthCheckin, true)
+  const json = live.toJSON()
+  assert.equal(json.refs[json.uid].meta.volatile, true)
+})

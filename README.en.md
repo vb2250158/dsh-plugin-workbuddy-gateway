@@ -1,12 +1,10 @@
 # dsh-plugin-workbuddy-gateway
 
-Manage WorkBuddy accounts, a local OpenAI-compatible gateway, and DSH model routes from **Plugins → WorkBuddy gateway**.
+Manage WorkBuddy accounts, a local OpenAI-compatible gateway, and DSH model routes from **Settings → WorkBuddy**.
 
 [中文](README.md) | English
 
-This maintenance fork of [Acoder416's upstream](https://github.com/Acoder416/dsh-plugin-workbuddy-gateway) fixes realm save/reload when a custom account directory is selected in 0.2.4.
-
-**Version: 0.2.4.** Install from the a fixed Git commit from main; `v0.2.1` remains available for rollback. No plugin market is required.
+**Version: 0.3.0.** Supports the current Config-based Settings API, verified against the official Windows DSH `0.2.1-rc.2` installation for settings edits, provider writes and restart persistence. Install from the fixed Git tag `v0.3.0`. No plugin market is required.
 
 This is an unofficial integration using WorkBuddy subscription endpoints and DSH internal APIs. Those interfaces can change, and using them may violate service terms or trigger account restrictions.
 
@@ -52,7 +50,7 @@ Restart **DSH itself**, then refresh the browser. Restarting only the Python gat
 Keep the checkout in a permanent directory:
 
 ```sh
-git clone --branch main https://github.com/vb2250158/dsh-plugin-workbuddy-gateway.git
+git clone --branch v0.3.0 https://github.com/Acoder416/dsh-plugin-workbuddy-gateway.git
 cd dsh-plugin-workbuddy-gateway
 npm run preflight
 ```
@@ -93,7 +91,9 @@ Alternatively, after installing the dependency, insert the plugin into the profi
 
 Changing realms updates the account list and model catalog. Automatic route maintenance also updates the DSH model picker; otherwise, sync the model route manually. The page shows the selected realm, active gateway realm, and model catalog realm separately. A switch that the running gateway does not confirm is not saved.
 
-1. Open Plugins → WorkBuddy gateway and start the gateway (default `127.0.0.1:18088`).
+On startup and restart, the gateway applies the selected realm before listening and reports running only after confirmation. Failed confirmation stops the gateway and displays an error. The active realm is stored in `active_realm.json` inside the account directory and restored when no realm is selected.
+
+1. Open Settings → WorkBuddy and start the gateway (default `127.0.0.1:18088`).
 2. Select the global or China realm.
 3. Scan and import a desktop credential, or complete browser OAuth.
 4. Check that the account is enabled and has credits.
@@ -101,11 +101,23 @@ Changing realms updates the account list and model catalog. Automatic route main
 
 Desktop imports attempt CN daily check-in before reading credits; global imports only read credits. Synchronization requires working upstream endpoints. Retry the relevant action if it fails.
 
-**Refresh credits** reads the balance. Upstream values are kept to two decimals, and expired packages are excluded from the usable total. **Check in** invokes the CN daily reward endpoint. Upstream code `10001`, including in an HTTP error response, means the reward was already claimed. The account card shows the last stored confirmation and timestamp, not a continuous query of today's status. Use Check in to reconfirm; an old timestamp does not establish today's claim.
+With **Start with dsh** enabled, the gateway automatically checks in enabled CN accounts about ten seconds after startup, without opening settings. Successful check-ins refresh credits and persist the local calendar date, so restarting DSH on the same day skips confirmed accounts. Disabled and global accounts do not check in. Failed attempts remain eligible on the next startup or existing scheduled cycle; manual check-in is also available. Working network access and valid credentials are required. The existing periodic schedule continues while the gateway runs.
+
+**Refresh credits** reads the balance. Upstream values are kept to two decimals, and expired packages are excluded from the usable total. **Check in** invokes the CN daily reward endpoint. Upstream code `10001`, including in an HTTP error response, means the reward was already claimed. The account card shows the last stored confirmation and timestamp. For the China realm, the gateway compares that timestamp with the local date, so yesterday's or older record automatically appears as not checked in today. Reading the page does not make another upstream request; use Check in when you need an immediate confirmation.
 
 Refreshing credits queries the upstream live, once per account, and retries before reporting a result. **Refresh all credits** can therefore take a while and may fail when there are several accounts or the network is poor — for example when the global realm is reached through a proxy. To refresh one account, use **Refresh credits** on its card.
 
 **Claim credits** invokes the bundled gateway's growth-task workflow, separate from daily check-in. It depends on upstream activity endpoints and does not guarantee rewards.
+
+**Automatic growth check-in (CN personal accounts)** is an independent, opt-in switch in the account section. Startup and subsequent background checks read the official current-day activity record. An inactive account submits one chat activity event, then verifies the result. Only an official `is_active: true` for today's date confirms completion. This does not call a model or automatically redeem rewards, spend makeup cards, or draw prizes. Only enabled, signed-in CN personal accounts participate; accounts already active in the official client skip the report.
+
+The activity calendar uses Asia/Shanghai. Admission is saved before sending, allowing at most one report per account per day across restarts, including uncertain network outcomes. Unconfirmed activity gets up to three verification rounds by default, five minutes apart, then displays the failure reason and stops checking for that day. Disabling the switch or stopping the gateway prevents subsequent requests; already-sent requests cannot be recalled. Network, credentials, or upstream changes can prevent confirmation.
+
+The `workbuddy-gateway` settings namespace exposes `autoGrowthCheckin` (default `false`), `growthCheckinRetrySeconds` (default `300`, range `30–3600`), and `growthCheckinMaxChecks` (default `3`, range `1–10`). The settings-page switch updates the running bundled gateway; file edits apply on restart. Upgrade the plugin and restart DSH for this feature. A custom `gatewayDir` must also implement its scheduler endpoint.
+
+The plugin supports current profile Config forms and legacy settings sections. Current hosts use the exported volatile `Config` and `settings.configure()`, address edits by the actual plugin entry id, and persist changes in the profile's `cordis.patch.yml`. Only legacy hosts that provide `installSection()` use that API. The configuration listener belongs to the plugin instance and is not duplicated when Settings is replaced.
+
+From the checkout, run `node scripts/verify-profile-settings.mjs <built-dsh-CLI.js-or-Desktop-dsh.cmd>` to check actual host loading, HTTP settings edits, external edits, provider writes and restart persistence. The check uses a temporary profile, temporary HTTP port and empty credentials. It does not start the gateway, read real accounts or call a model.
 
 Without a session binding, the gateway rotates across available accounts in the same realm. Bound sessions prefer their existing account. HTTP 429 or upstream business code 6004 records a restriction for that account and model, then tries another eligible account in the same realm. Other models remain eligible. Reaching the deadline permits another attempt; it does not guarantee upstream acceptance. A positive credit balance does not rule out a model frequency limit.
 
@@ -113,13 +125,17 @@ The reset deadline comes from the upstream message's date and UTC offset, then f
 
 When model restrictions block all otherwise eligible accounts in the realm, subsequent requests return HTTP 429 with the earliest `resetAt` (Unix seconds) in the error message, without contacting upstream before that deadline. Multiple accounts returning 429 does not establish a shared IP limit; each account retains its own deadline.
 
-During connection setup, HTTP 401/403 and network exceptions retain existing account error handling and try another account. HTTP 502/503/504 also try another account without applying account cooldown. Each candidate is tried at most once per request. With no alternative or all accounts failing, the error is still returned. Other HTTP errors and failures after streaming starts do not guarantee failover. Accounts do not cross realms.
+When the official WorkBuddy client returns upstream code `11140` as well, treat it as an account-level risk restriction, not a prompt problem. The gateway marks that account temporarily unavailable, tries other accounts in the same realm, and returns the upstream trace ID and explanation; DSH no longer renders it as an invalid API key. Contact WorkBuddy support to resolve the restriction; changing the prompt, retrying, or switching local models cannot clear it. Other HTTP 401/403 responses retain authentication cooldown and same-realm failover. HTTP 502/503/504, SSL disconnects, and connection timeouts try other accounts without account cooldown. Each candidate is tried at most once per request; failure across all candidates still returns an error. Requests are not replayed after streaming starts, and accounts never cross realms.
+
+Availability excludes disabled or cooling accounts, missing tokens, and expired credentials without a refresh token. Historical errors alone do not block retry after cooldown. Refreshable credentials are eligible for a refresh attempt, which may still fail. Account availability, model restrictions, and credit balances are separate signals.
 
 The desktop app does not need to stay open after import. Logging out of it does not necessarily revoke the gateway's saved tokens.
 
 ## Desktop credential locations
 
 Only `workbuddy-desktop-ai.info` (global) and `workbuddy-desktop.info` (China) are scanned.
+
+Recent desktop versions can store nicknames and login tokens as `$wbEncrypted` objects. The plugin displays the filename for unreadable nicknames; encrypted tokens produce an explanation and disable import. Select the matching region and use the plugin's **Sign in via browser** action to add the account. The plugin does not decrypt or modify desktop files, and does not read timestamped backups or `.logged-out` files. Empty scans show a message; plaintext credentials remain importable.
 
 | Platform | Default directory |
 |---|---|
@@ -147,10 +163,10 @@ The gateway API key is stored in DSH's credential store as `WORKBUDDY_API_KEY`. 
 Stop DSH and back up the profile configuration, lockfile, and WorkBuddy state before upgrading. Backups contain credentials and must stay private.
 
 ```sh
-# Upgrade
+# Install the current version
 dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#<main-commit>"
-# Roll back
-dsh plugin --profile web add "github:vb2250158/dsh-plugin-workbuddy-gateway#v0.2.1"
+# Roll back only on a host that still provides the legacy Settings API
+dsh plugin --profile web add "github:Acoder416/dsh-plugin-workbuddy-gateway#v0.2.6"
 ```
 
 For a linked checkout:
@@ -158,11 +174,11 @@ For a linked checkout:
 ```sh
 git status --short
 git fetch origin --tags
-git switch --detach <main-commit>
-# To roll back: git switch --detach v0.2.1
+git switch --detach v0.3.0
+# To roll back on a legacy host: git switch --detach v0.2.6
 ```
 
-Preserve local changes before switching. Restart DSH and refresh the browser afterward. A linked installation follows that directory, not another checkout. Code rollback does not undo reward claims, account changes, or model-route writes. Restore your own configuration backup if needed. See [CHANGELOG.md](CHANGELOG.md).
+Preserve local changes before switching. Restart DSH and refresh the browser afterward. A linked installation follows that directory, not another checkout. Keep `v0.3.0` on DSH `0.2.1-rc.2`: that host does not provide the legacy Settings API used by `v0.2.6`. Code rollback does not undo reward claims, account changes, or model-route writes. Restore your own configuration backup if needed. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Troubleshooting and removal
 
@@ -187,15 +203,3 @@ node scripts/check-package.mjs
 On systems with only `python3`, run `python3 -m unittest discover -s tests -p 'test_*.py'`. Regression tests use simulated responses and do not spend account quota or substitute for platform testing.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Plugin and bundled gateway are MIT-licensed. Gateway upstream: [ardeyouxipianyi/workbuddy2api-intl](https://github.com/ardeyouxipianyi/workbuddy2api-intl). Local account-adapter changes are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-0.2.4 consolidates account restriction, network failure and current-day check-in fixes while retaining realm persistence in custom account directories.
-
-## Plugin display metadata
-
-The plugin list shows **WorkBuddy gateway** in English and **WorkBuddy 网关** in Chinese, following the DSH interface language. `locale/en.json` and `locale/zh.json` provide the title and description; `icon.svg` supplies self-contained artwork. The package exports and publishes these resources. The icon is adapted from Lucide; see [ICON_LICENSE.txt](ICON_LICENSE.txt).
-
-## Plugin configuration
-
-Open this plugin from the Plugins list to access its existing configuration and controls. Settings no longer duplicates its navigation entry.
-
-The icon uses a centered 36 × 36 viewBox to leave more space around the artwork inside the plugin icon frame.

@@ -20,6 +20,14 @@ upstream license is retained.
 `Copyright (c) 2026` with no name attached, and it is reproduced here exactly as
 received rather than attributed to a name its own text does not state.
 
+**Unreleased local modifications.** `wb_scheduler.py` uses `checkin_claimed_today()` for startup and scheduled check-ins, skips disabled accounts, excludes overlapping cycles, and refreshes credits after successful check-in. Credit-refresh and travel failures do not prevent later accounts from checking in. The initial wait observes shutdown. Offline scheduler tests use real account persistence with mocked upstream requests.
+
+`wb_growth.py` adds locally owned daily growth confirmation, using the existing `wb_tasks.build_event` format and the chat-side `/v2/report` endpoint referenced by [upstream commit ffef0a5](https://github.com/ardeyouxipianyi/workbuddy2api-hub/commit/ffef0a5d96bd15bdad7105c3039a6e9ca71710fa). It requires the official heatmap's current-day activity flag, stores admission before sending, and bounds subsequent read attempts. `wb_accounts.py` persists and exposes this state and preserves it during reimport; `wb_scheduler.py` owns the checks; `wb_proxy.py` exposes authenticated policy updates. No upstream reward-redemption or lottery automation is included in this change.
+
+**Modifications in 0.2.5.** `wb_accounts.py` omits encrypted display metadata and rejects encrypted access/refresh tokens before import or upstream requests. Scan responses identify encrypted credentials so the client can direct users to browser authorization. Desktop files remain unchanged; offline fixtures cover scanning, import rejection, and plaintext compatibility.
+
+**Modifications in 0.2.4.** `wb_proxy.py` reads the startup realm from `WB_PROXY_REALM` before listening, resolves realm persistence relative to the configured account directory, and announces readiness after binding the HTTP socket.
+
 **Modifications in 0.1.2.** `wb_accounts.py` contains local changes for:
 
 - Platform-specific desktop credential directories and `WORKBUDDY_DESKTOP_AUTH_DIR`.

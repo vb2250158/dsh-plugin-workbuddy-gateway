@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.3.1 - 2026-10-20
+
+- Integrate upstream 0.3.0 settings, account handling and opt-in daily/growth checks while retaining the maintenance fork source, icon and isolated runtime directories.
+
+
+## 0.3.0 — 2026-10-19
+
+- Support Config-based settings on Desktop `0.2.1-rc.2` without calling the removed `installSection()` API. Verify settings edits without remounting, restart persistence, and provider writes that preserve sibling routes through an isolated `dsh` profile. Keep one configuration listener on the plugin owner when Settings is replaced.
+- Add opt-in CN personal-account growth check-in, with an independent switch and localized confirmation/failure status. Query official current-day activity before reporting, and confirm completion only from the official activity record.
+- Persist report admission before sending, enforce the Shanghai day boundary, and limit verification retries across restarts and credential reimports. Unknown report outcomes are not resent. Preserve existing billing check-in behavior.
+- Retain settings sections for legacy hosts and wait for gateway shutdown during plugin disposal. Restart DSH after upgrading; account data requires no migration.
+
+- Repair startup daily check-in by using the account adapter’s persisted local-day confirmation instead of calling an absent method. Skip disabled accounts and overlapping scheduler cycles, refresh credits after success, and keep credit or travel failures from preventing later accounts’ check-ins.
+- Cancel the initial background wait on shutdown. Add offline startup, restart, next-day, retry, eligibility, and overlapping-trigger regressions.
+
+## 0.2.6 — 2026-10-03
+
+- Fix model-route writes against current DSH settings service APIs by reading the `llm-pi-ai` entry through `settings.describe()` and retaining path-level `settings.mutate()` writes.
+- Keep Desktop settings actions working through every official bridge path: accept the explicit `Origin: dsh-app://app`, the older app `Referer` fallback, and the final forwarded form where the bridge removes both `Origin` and `Referer` by sending a preserved client request marker.
+- Keep explicit cross-origin origins, missing markers, invalid markers, and missing hosts rejected.
+- Preserve the encrypted desktop-credential scan safeguards: malformed display metadata falls back to the credential filename, encrypted tokens are never imported, and the settings page shows actionable guidance instead of rendering malformed entries.
+- Add regressions for settings API writes, all Desktop same-origin forms, invalid request markers, and the real desktop scan POST request.
+
+## 0.2.5 — 2026-09-23
+
+- Prevent desktop credential scans from returning encrypted nickname objects that crash the settings page. Invalid display metadata now falls back to the credential filename, and the client ignores malformed scan entries instead of rendering objects as React children.
+- Reject encrypted access/refresh tokens during scanning and import, with guidance to use browser authorization. Scans remain read-only; encrypted data is neither decrypted nor saved as a usable token.
+- Show an explicit message when no desktop credentials are found. Plaintext credential import remains supported, with encrypted display metadata omitted.
+- Align the host and health endpoint version with the package version. Add regressions for encrypted desktop metadata, import rejection, and scan interactions in the settings renderer.
+
+## 0.2.4 — 2026-09-21
+
+- Select the configured realm before the gateway listens, then verify the realm using the launched API key before reporting the gateway as running. Failed confirmation stops the process instead of serving a different region.
+- Store and restore the active realm in the configured account directory. Emit readiness only after the HTTP socket is bound.
+- Cover startup failure, interrupted setup, explicit region overrides, persistence, and a real offline gateway restart.
+- Apply settings synchronously in the host test fixture so disabled autostart cannot launch a real gateway during unit tests.
+
+## 0.2.3 — 2026-09-19
+
 ## 0.2.9 (2026-10-07)
 
 - 缩小图标绘制内容约三分之一，增加方框内的留白。

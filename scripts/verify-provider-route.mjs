@@ -45,6 +45,11 @@ const file = join(dir, 'settings.yaml')
 if (source === undefined) writeFileSync(file, FIXTURE, 'utf8')
 else copyFileSync(source, file)
 
+/** Read one registered section through the current settings descriptor API. */
+function readSection(settings, namespace) {
+  return settings.describe({ redactSecrets: false }).find((entry) => entry.ns === namespace)?.value
+}
+
 const before = readFileSync(file, 'utf8')
 
 const ctx = new Context()
@@ -62,7 +67,7 @@ const check = (label, condition, detail = '') => {
   if (!condition) failed = true
 }
 
-const beforeDoc = ctx.settings.get('llm-pi-ai')
+const beforeDoc = readSection(ctx.settings, 'llm-pi-ai')
 check('fixture starts with only the sibling route', Object.keys(beforeDoc.providers).length === 1)
 
 const entry = buildProviderEntry({
@@ -82,7 +87,7 @@ const entry = buildProviderEntry({
 const added = await applyProvider({ settings: ctx.settings, providerId: 'workbuddy', entry })
 check('add reports the new route set', added.changed && added.providers.includes('workbuddy'), JSON.stringify(added.providers))
 
-const afterAdd = ctx.settings.get('llm-pi-ai')
+const afterAdd = readSection(ctx.settings, 'llm-pi-ai')
 check('sibling route survives the add', afterAdd.providers.sub?.baseURL === 'https://sub.example/v1', JSON.stringify(afterAdd.providers.sub))
 check('the new route carries the derived models', afterAdd.providers.workbuddy?.models?.[0]?.id === 'gpt-6-astra')
 check('describeProvider agrees the route is present', describeProvider(ctx.settings, 'workbuddy').present === true)
@@ -96,14 +101,14 @@ check('the document still parses as YAML', fileAfterAdd.includes('providers:'))
 
 // A second add must replace, not duplicate.
 await applyProvider({ settings: ctx.settings, providerId: 'workbuddy', entry: { ...entry, baseURL: 'http://127.0.0.1:19000/v1' } })
-const afterSecond = ctx.settings.get('llm-pi-ai')
+const afterSecond = readSection(ctx.settings, 'llm-pi-ai')
 check('a repeated add replaces the route', afterSecond.providers.workbuddy?.baseURL === 'http://127.0.0.1:19000/v1')
 check('a repeated add does not duplicate', Object.keys(afterSecond.providers).length === 2)
 
 const removed = await applyProvider({ settings: ctx.settings, providerId: 'workbuddy', entry: null })
 check('remove reports the route gone', removed.changed && !removed.providers.includes('workbuddy'), JSON.stringify(removed.providers))
 
-const afterRemove = ctx.settings.get('llm-pi-ai')
+const afterRemove = readSection(ctx.settings, 'llm-pi-ai')
 check('sibling route survives the remove', afterRemove.providers.sub?.baseURL === 'https://sub.example/v1')
 check('describeProvider agrees the route is absent', describeProvider(ctx.settings, 'workbuddy').present === false)
 

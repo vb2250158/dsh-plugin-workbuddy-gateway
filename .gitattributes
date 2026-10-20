@@ -10,6 +10,7 @@ vendor/** -text
 # Locally patched gateway modules retain upstream CRLF endings.
 vendor/workbuddy-gateway/wb_accounts.py whitespace=trailing-space,space-before-tab,cr-at-eol
 vendor/workbuddy-gateway/wb_proxy.py whitespace=trailing-space,space-before-tab,cr-at-eol
+vendor/workbuddy-gateway/wb_scheduler.py whitespace=trailing-space,space-before-tab,cr-at-eol
 
 # Binary assets.
 *.png binary

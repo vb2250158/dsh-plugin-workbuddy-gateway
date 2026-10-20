@@ -11,7 +11,7 @@ name: ci
 # plugin's tests — the harness's own settings service refusing a schema, or a
 # path-level write touching a sibling route. It is pinned to a DSH revision
 # because it asserts against harness internals that move; bump DS_REF when you
-# verify against a newer harness.
+# verify against a newer harness. Integration launches an isolated dsh profile.
 
 on:
   push:
@@ -24,7 +24,7 @@ permissions:
 
 env:
   # Revision of the harness used by the integration job. Bump deliberately.
-  DSH_REF: main
+  DSH_REF: 1517a4dbca0a2789ff1d41ba439600f8547d23fa
 
 jobs:
   unit:
@@ -59,6 +59,9 @@ jobs:
       - name: Bundled account regression tests
         run: npm run test:python
 
+      - name: Gateway startup and realm persistence
+        run: npm run verify:boot
+
   integration:
     name: integration against a real DSH checkout
     runs-on: ubuntu-latest
@@ -84,7 +87,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24'
 
       - uses: pnpm/action-setup@v4
         with:
@@ -94,10 +97,10 @@ jobs:
         working-directory: dsh
         run: pnpm install --frozen-lockfile
 
-      - name: The settings service accepts our section and serializes it
+      - name: Build the harness CLI and its runtime
         working-directory: dsh
-        run: node --import tsx/esm "$GITHUB_WORKSPACE/plugin/scripts/verify-settings-section.mjs"
+        run: pnpm run build
 
-      - name: A path-level write leaves sibling routes untouched
-        working-directory: dsh
-        run: node --import tsx/esm "$GITHUB_WORKSPACE/plugin/scripts/verify-provider-route.mjs"
+      - name: Config forms, provider writes, and restart persistence
+        working-directory: plugin
+        run: node scripts/verify-profile-settings.mjs "$GITHUB_WORKSPACE/dsh/apps/cli/lib/bin.js"

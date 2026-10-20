@@ -59,9 +59,11 @@ function loadClient({ state, respond } = {}) {
   }
 
   const calls = []
+  const requests = []
   globalThis.fetch = async (url, options) => {
     const text = String(url)
     calls.push(text)
+    requests.push({ url: text, options })
     const body = respond ? await respond(text, options) : text.endsWith('/state') && state !== undefined
       ? { ok: true, data: state }
       : { ok: true, data: {} }
@@ -99,6 +101,7 @@ function loadClient({ state, respond } = {}) {
     startPolling: () => effects[1](),
     h,
     calls,
+    requests,
     restore: () => {
       globalThis.window = previousWindow
       globalThis.fetch = previousFetch
@@ -171,6 +174,65 @@ function render(state) {
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve))
+
+test('growth activity confirmation is separate from billing check-in in the account card', () => {
+  const now = new Date()
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  for (const [status, expected] of [['pending', /awaiting official|待官方确认/],
+    ['confirmed', /confirmed today|今日已确认/], ['failed', /unconfirmed today|今日未确认/]]) {
+    const { text } = render(stateWith([{ uid: 'cn', realm: 'cn', enabled: true,
+      checkinClaimed: true, lastCheckin: `${date} 08:00:00`,
+      growthCheckin: { status, reason: status === 'failed' ? 'not_recorded' : '' } }],
+    { autoGrowthCheckin: true }))
+    assert.match(text, expected)
+    assert.match(text, /Checked in|已签到/)
+  }
+})
+
+test('the independent growth checkbox saves and displays the confirmed setting', async () => {
+  let state = stateWith([], { autoGrowthCheckin: false })
+  const client = loadClient({ state, respond: (url, options) => {
+    if (url.endsWith('/config')) {
+      assert.deepEqual(JSON.parse(options.body), { autoGrowthCheckin: true })
+      state = { ...state, settings: { ...state.settings, autoGrowthCheckin: true } }
+      return { ok: true, data: { settings: state.settings, gateway: state.gateway } }
+    }
+    return { ok: true, data: state }
+  } })
+  try {
+    const findSwitch = () => {
+      const label = findAll(client.render(), n => n.type === 'label' && /Automatic growth|自动成长打卡/.test(textOf(n)))[0]
+      return findAll(label, n => n.type === 'input')[0]
+    }
+    assert.equal(findSwitch().props.checked, false)
+    findSwitch().props.onChange({ target: { checked: true } })
+    await settle()
+    assert.equal(findSwitch().props.checked, true)
+  } finally { client.restore() }
+})
+
+test('desktop scan explains encrypted credentials and an empty result without hiding settings', async () => {
+  for (const detected of [[], [{ path: 'desktop.info', file: 'desktop.info', valid: false,
+    errorCode: 'desktop_credentials_encrypted', nickname: { $wbEncrypted: 1 } }]]) {
+    const state = stateWith([])
+    const client = loadClient({ state, respond: (url) => ({ ok: true, data: url.endsWith('/accounts/scan')
+      ? { scan: { detected } } : state }) })
+    try {
+      findAll(client.render(), n => n.type === 'button' && /Scan desktop accounts|扫描桌面端账号/.test(textOf(n)))[0].props.onClick()
+      await settle()
+      const scanRequest = client.requests.find(({ url }) => url.endsWith('/accounts/scan'))
+      assert.equal(scanRequest?.options?.headers?.['X-DSH-WorkBuddy-Request'], 'desktop')
+      const tree = client.render()
+      assert.match(textOf(tree), detected.length ? /encrypted|加密/ : /No desktop credentials found|未找到桌面端凭证/)
+      assert.ok(findAll(tree, n => n.props.key === 'providerCard').length)
+      if (detected.length) {
+        const imports = findAll(tree, n => n.type === 'button' && /^(Import|导入)$/.test(textOf(n)))
+        assert.equal(imports.length, 1)
+        assert.equal(imports[0].props.disabled, true)
+      }
+    } finally { client.restore() }
+  }
+})
 
 test('configuration controls apply saved values and submit the displayed port', async () => {
   let saved = stateWith([], { autoStart: true, providerSync: true, realm: 'intl' })

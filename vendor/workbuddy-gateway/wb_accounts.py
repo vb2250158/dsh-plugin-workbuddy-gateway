@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from wb_fingerprint import derive_id, generate_request_id
+from wb_growth import public_state as growth_public_state
 
 
 def _retryable(exc):
@@ -256,6 +257,7 @@ class Account(object):
         self.credits = data.get("credits") or None
         self.last_checkin = data.get("lastCheckin") or None
         self.checkin_claimed = data.get("checkinClaimed")
+        self.growth_checkin = data.get("growthCheckin")
 
     def to_dict(self):
         return {
@@ -277,6 +279,7 @@ class Account(object):
             "credits": self.credits,
             "lastCheckin": self.last_checkin,
             "checkinClaimed": self.checkin_claimed,
+            "growthCheckin": self.growth_checkin,
         }
 
     def public(self):
@@ -304,6 +307,7 @@ class Account(object):
             "lastCheckin": self.last_checkin,
             "checkinClaimed": self.checkin_claimed_today() if self.realm == "cn" else None,
             "canCheckin": self.realm == "cn",
+            "growthCheckin": growth_public_state(self.growth_checkin) if self.realm == "cn" else None,
             "machineId": derive_id(self.uid, "machine"),
             "sessionId": derive_id(self.uid, "session"),
         }
@@ -669,6 +673,8 @@ class AccountPool(object):
                     account.credits = existing.credits
                 if not account.last_checkin and existing.last_checkin:
                     account.last_checkin = existing.last_checkin
+                if account.growth_checkin is None:
+                    account.growth_checkin = existing.growth_checkin
                 if not account.model_rate_limits and existing.model_rate_limits:
                     account.model_rate_limits = dict(existing.model_rate_limits)
                 self.accounts[self.accounts.index(existing)] = account
@@ -859,19 +865,18 @@ class AccountPool(object):
             blob = json.load(fh)
         auth = blob.get("auth") or {}
         profile = blob.get("account") or {}
-        token = str(auth.get("accessToken") or "")
-        if not token: raise RuntimeError("no accessToken in %s" % path)
+        token, refresh_token = _desktop_tokens(auth)
         detected_realm = realm or detect_realm_from_token(token, auth.get("domain"))
         cfg = get_realm_config(detected_realm)
         account = Account({
             "uid": profile.get("uid") or jwt_uid(token),
-            "nickname": profile.get("nickname") or "",
+            "nickname": _desktop_text(profile.get("nickname")),
             "domain": auth.get("domain") or cfg["domain"],
             "realm": detected_realm,
             "platform": "CLI",
             "enterpriseId": profile.get("enterpriseId") or "",
             "accessToken": token,
-            "refreshToken": auth.get("refreshToken") or "",
+            "refreshToken": refresh_token,
             "expiresAt": normalize_epoch(auth.get("expiresAt")) or jwt_exp(token),
             "source": source,
             "enabled": True,
@@ -882,6 +887,32 @@ class AccountPool(object):
             account.checkin()
         account.fetch_credits()
         return account
+
+class _EncryptedDesktopCredentials(ValueError):
+    """Desktop tokens need authorization through the gateway instead of file import."""
+
+
+def _desktop_text(value):
+    """Keep encrypted or malformed desktop metadata out of display text."""
+    return value if isinstance(value, str) else ""
+
+
+def _desktop_tokens(auth):
+    """Admit plaintext desktop tokens; never stringify encrypted envelopes."""
+    if not isinstance(auth, dict):
+        raise ValueError("invalid desktop auth fields")
+    token = auth.get("accessToken")
+    refresh = auth.get("refreshToken")
+    for value in (token, refresh):
+        if isinstance(value, dict) and value.get("$wbEncrypted") == 1:
+            raise _EncryptedDesktopCredentials(
+                'Desktop credentials are encrypted. Use "Sign in via browser" in the plugin.')
+    if not isinstance(token, str) or not token.strip():
+        raise ValueError("missing or invalid desktop accessToken")
+    if refresh is not None and not isinstance(refresh, str):
+        raise ValueError("invalid desktop refreshToken")
+    return token, refresh or ""
+
 
 def desktop_auth_dir():
     """Return the platform's desktop credential directory.
@@ -940,21 +971,20 @@ def scan_desktop_credentials():
                 blob = json.load(fh)
             auth = blob.get("auth") or {}
             profile = blob.get("account") or {}
-            token = str(auth.get("accessToken") or "")
             item["readable"] = True
-            if not token:
-                item["error"] = "no accessToken inside the file"
-                found.append(item)
-                continue
+            token, _refresh_token = _desktop_tokens(auth)
             exp = normalize_epoch(auth.get("expiresAt")) or jwt_exp(token) or 0
             item.update({
                 "valid": True,
-                "uid": profile.get("uid") or jwt_uid(token),
-                "nickname": profile.get("nickname") or "",
-                "domain": auth.get("domain") or cfg["domain"],
+                "uid": _desktop_text(profile.get("uid")) or jwt_uid(token),
+                "nickname": _desktop_text(profile.get("nickname")),
+                "domain": _desktop_text(auth.get("domain")) or cfg["domain"],
                 "expiresAt": exp,
                 "expiresIn": _human_delta(exp - time.time()) if exp else None,
             })
+        except _EncryptedDesktopCredentials as exc:
+            item["errorCode"] = "desktop_credentials_encrypted"
+            item["error"] = str(exc)
         except Exception as exc:
             item["error"] = str(exc)
         found.append(item)

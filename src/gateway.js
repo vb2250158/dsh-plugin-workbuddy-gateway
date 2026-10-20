@@ -45,6 +45,27 @@ const READY_PATTERN = /listening\s*:\s*(http:\/\/\S+)/
 const PORT_PATTERN = /:(\d+)\/v1/
 
 /**
+ * Confirm the selected realm using the key passed to the launched process.
+ * @param {object} options - gateway baseUrl, apiKey, and selected realm (null follows saved state).
+ * @returns {Promise<void>} rejects when the gateway cannot confirm the realm within ten seconds.
+ */
+export async function confirmGatewayRealm({ baseUrl, apiKey, realm }) {
+  if (realm === null) return
+  const response = await fetch(`${baseUrl.replace(/\/v1$/, '')}/realm`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      'content-type': 'application/json',
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify({ realm }),
+  })
+  if (!response.ok) throw new Error(`realm setup returned HTTP ${response.status}`)
+  const result = await response.json()
+  if (result.current !== realm) throw new Error('gateway did not confirm the configured realm')
+}
+
+/**
  * Python commands to try, in order, when the operator has not named one.
  *
  * `python` alone is not a portable default. macOS has shipped no `python` shim
@@ -157,9 +178,8 @@ export class Gateway {
    *   A function rather than a value: `gatewayDir` is a settings field, so the
    *   script path must be re-derived at every start.
    * @param {() => {script: string, cwd: string, accountsDir: string, usageDir: string}} options.paths
-   * @param {Function} [options.onReady] - awaited after the gateway reports
-   *   readiness, so the caller can apply runtime-only configuration (the active
-   *   realm) that no command-line flag can express.
+   * @param {Function} [options.onReady] - confirms configuration after the socket
+   *   is listening. Failure stops the child; running is reported only on success.
    */
   constructor({ spawn, settings, paths, onReady }) {
     this.#spawn = spawn
@@ -204,7 +224,7 @@ export class Gateway {
   }
 
   /**
-   * Start the gateway, resolving once it reports that it is listening.
+   * Start the gateway, resolving after the listener and configuration are ready.
    *
    * Calling `start()` on a running gateway is a no-op, so a settings page
    * button and an `autoStart` mount cannot fight each other.
@@ -247,9 +267,8 @@ export class Gateway {
     this.#append('log', `starting gateway: ${interpreter} ${paths.script} --port ${settings.port}`)
     this.#interpreter = interpreter
 
-    // The gateway has no `--realm` flag: the active realm is chosen at runtime
-    // through its own `POST /realm` endpoint, which persists to the account
-    // store. Passing an unknown flag here would abort argparse and kill boot.
+    // The environment selects the realm before listening; POST /realm then
+    // confirms and persists it using the launched process's API key.
     const args = ['-u', paths.script, '--port', String(settings.port)]
     if (typeof apiKey === 'string' && apiKey !== '') args.push('--api-key', apiKey)
 
@@ -265,6 +284,10 @@ export class Gateway {
           // checkout and into $DSH_HOME.
           ACCOUNTS_DIR: paths.accountsDir,
           WB_PROXY_USAGE_DIR: paths.usageDir,
+          WB_PROXY_REALM: settings.realm ?? '',
+          WB_GROWTH_CHECKIN_ENABLED: settings.autoGrowthCheckin === true ? '1' : '0',
+          WB_GROWTH_CHECKIN_RETRY_SECONDS: String(settings.growthCheckinRetrySeconds ?? 300),
+          WB_GROWTH_CHECKIN_MAX_CHECKS: String(settings.growthCheckinMaxChecks ?? 3),
           // Keep Python from buffering the readiness line behind its stdio.
           PYTHONUNBUFFERED: '1',
           PYTHONIOENCODING: 'utf-8',
@@ -310,17 +333,26 @@ export class Gateway {
       return { ok: false, state: this.#state, baseUrl: null, error: ready.error }
     }
 
-    this.#state = GATEWAY_STATE.running
-    this.#append('log', `gateway ready at ${this.#baseUrl}`)
     if (this.#onReady !== undefined) {
       try {
         await this.#onReady({ baseUrl: this.#baseUrl, apiKey })
       } catch (error) {
-        // A failed post-ready step degrades the page's reading but must not
-        // pretend the gateway is down: it is serving, and requests still work.
-        this.#append('error', `post-ready setup failed: ${messageOf(error)}`)
+        const detail = `post-ready setup failed: ${messageOf(error)}`
+        if (this.#child !== child) {
+          return { ok: false, state: this.#state, baseUrl: null, error: detail }
+        }
+        this.#append('error', detail)
+        await this.stop({ keepState: true })
+        this.#state = GATEWAY_STATE.failed
+        this.#lastError = detail
+        return { ok: false, state: this.#state, baseUrl: null, error: detail }
       }
     }
+    if (this.#child !== child || this.#state !== GATEWAY_STATE.starting) {
+      return { ok: false, state: this.#state, baseUrl: null, error: 'gateway stopped during setup' }
+    }
+    this.#state = GATEWAY_STATE.running
+    this.#append('log', `gateway ready at ${this.#baseUrl}`)
     return { ok: true, state: this.#state, baseUrl: this.#baseUrl, error: null }
   }
 

@@ -26,10 +26,10 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { Gateway, baseUrlFor } from './gateway.js'
+import { Gateway, baseUrlFor, confirmGatewayRealm } from './gateway.js'
 import { mount } from './routes.js'
-import { applyProvider, buildProviderEntry, currentProviderBaseUrl, describeProvider, PI_AI_NAMESPACE } from './provider-route.js'
-import z from '@deepseek-ai/schemastery'
+import { applyProvider, buildProviderEntry, currentProviderBaseUrl, describeProvider, readProviderMap, PI_AI_NAMESPACE } from './provider-route.js'
+import { defineSchema } from './schema.js'
 import {
   API_KEY_REF,
   PROVIDER_ID,
@@ -45,12 +45,10 @@ import {
  * provider catalog serializes every registered schema with `toJSON()`, and a
  * plain function has none, which took the whole models settings page down.
  */
-export const Config = z.object({
-  port: z.number().min(1).max(65535).step(1).default(18088),
-  autoStart: z.boolean().default(true), providerSync: z.boolean().default(true),
-  gatewayDir: z.string().default(''), pythonPath: z.string().default(''),
-  realm: z.union([z.const('intl'), z.const('cn'), z.const(null)]).default(null),
-}).volatile()
+const SECTION_SCHEMA = defineSchema(SETTINGS_BASE, (candidate) => normalizeSettings(candidate))
+
+/** Live profile configuration for current DSH; legacy settings keep their own section. */
+export const Config = defineSchema(SETTINGS_BASE, normalizeSettings, { volatile: true })
 
 /** Cordis plugin name. */
 export const name = 'dsh-plugin-workbuddy-gateway'
@@ -59,7 +57,7 @@ export const name = 'dsh-plugin-workbuddy-gateway'
 export const inject = ['webServer', 'settings']
 
 /** Plugin build marker, surfaced by `/health` so a stale mount is visible. */
-export const PLUGIN_VERSION = '0.2.6'
+export const PLUGIN_VERSION = '0.3.1'
 
 /**
  * Register the gateway supervisor, its routes, and its settings section.
@@ -68,6 +66,8 @@ export const PLUGIN_VERSION = '0.2.6'
  * @param {object} [config] - loader config; composition defaults for the section.
  */
 export function apply(ctx, config) {
+  const readConfig = () => typeof config?.get === 'function' ? config.get() : config
+  let settingsNamespace = SETTINGS_NAMESPACE
   const root = dirname(fileURLToPath(import.meta.url))
   const vendorDir = resolve(root, '..', 'vendor', 'workbuddy-gateway')
   const dshHome = process.env.DSH_HOME !== undefined && process.env.DSH_HOME !== ''
@@ -84,7 +84,7 @@ export function apply(ctx, config) {
    * mount time: the realm picker never echoed a switch, the account and model
    * reads kept querying the old realm, and the CN-only buttons never appeared.
    */
-  const readSettings = () => config.get()
+  let readSettings = () => ({ ...SETTINGS_BASE, ...readConfig() })
 
   /** Current resolved settings; re-derived on attach and on every committed change. */
   let current = normalizeSettings(readSettings())
@@ -136,18 +136,7 @@ export function apply(ctx, config) {
     // A function, not a value: `gatewayDir` is a settings field, so the script
     // path has to be re-derived on every start.
     paths: () => pathsOf(current),
-    onReady: async ({ baseUrl }) => {
-      if (current.realm === null) return
-      const key = await resolveApiKey(ctx)
-      await fetch(`${baseUrl.replace(/\/v1$/, '')}/realm`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...key === null ? {} : { authorization: `Bearer ${key}` },
-        },
-        body: JSON.stringify({ realm: current.realm }),
-      })
-    },
+    onReady: ({ baseUrl, apiKey }) => confirmGatewayRealm({ baseUrl, apiKey, realm: current.realm }),
   })
 
   /** Describe the plugin's own route without changing anything. */
@@ -202,8 +191,8 @@ export function apply(ctx, config) {
       // A port change must not leave a stale endpoint behind. Only the endpoint
       // is corrected here, not the model list, because the gateway may not be
       // running and the list can only come from it.
-      const section = ctx.settings.describe().find(entry => entry.ns === PI_AI_NAMESPACE)?.value
-      const entry = section?.providers?.[PROVIDER_ID]
+      const reading = readProviderMap(ctx.settings)
+      const entry = reading.ok ? reading.providers[PROVIDER_ID] : undefined
       if (entry === undefined || entry === null) return
       await applyProvider({
         settings: ctx.settings,
@@ -215,15 +204,43 @@ export function apply(ctx, config) {
     }
   }
 
-  // The settings section is wired FIRST, and its `installSection` resolves the
-  // section synchronously through `setSource`. The web-server block below reads
-  // `current.autoStart`, and a reversed order would compare the composition
-  // default instead of the user's choice.
-  ctx.effect(() => ctx.settings.configure({ auto: false }, ctx.fiber))
-  ctx.on('settings/document-updated', namespace => {
-    if (namespace !== SETTINGS_NAMESPACE) return
-    syncCurrent()
-    if (current.providerSync) void refreshBaseUrl()
+  // Loader targets the owning plugin fiber. Register once on that owner, even
+  // when the Settings service and its injected child are replaced.
+  if (typeof config?.get === 'function') {
+    ctx.on('loader/volatile-update', () => {
+      syncCurrent()
+      if (current.providerSync) void refreshBaseUrl()
+    })
+  }
+
+  // Resolve the persisted configuration before the web scope checks autoStart.
+  // Current hosts supply a live Config reference; legacy hosts supply a section.
+  ctx.inject(['settings'], (settingsCtx) => {
+    if (typeof settingsCtx.settings.installSection !== 'function') {
+      settingsNamespace = ctx.fiber.entry?.options.id ?? SETTINGS_NAMESPACE
+      settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
+      syncCurrent()
+      return
+    }
+    settingsCtx.settings.installSection(
+      ctx,
+      SETTINGS_NAMESPACE,
+      SECTION_SCHEMA,
+      { ...SETTINGS_BASE, ...readConfig() },
+      {
+        setSource: (source) => {
+          readSettings = source
+          syncCurrent()
+        },
+        onChange: () => {
+          syncCurrent()
+          // Routes are derived from the port, so a port change must not leave a
+          // stale baseURL behind in settings.yaml.
+          if (!current.providerSync) return
+          void refreshBaseUrl()
+        },
+      },
+    )
   })
 
   ctx.inject(['webServer'], (webCtx) => {
@@ -236,10 +253,9 @@ export function apply(ctx, config) {
       gateway,
       settings: () => current,
       updateSettings: async (patch) => {
-        // `update` merges a partial patch into this namespace's user layer. The
-        // namespace is already registered by `installSection`, so registering
-        // again here would throw.
-        await webCtx.settings.update(SETTINGS_NAMESPACE, patch)
+        // Current forms are addressed by the actual Loader entry id. Legacy
+        // hosts use the explicitly registered section namespace.
+        await webCtx.settings.update(settingsNamespace, patch)
         // Re-derive before this request's own snapshot runs. The scope watcher
         // that also does it is not ordered against this await, and a realm switch
         // that still read the old realm would answer with the previous region's
@@ -265,9 +281,7 @@ export function apply(ctx, config) {
     // stopped if this plugin started it: adopting a pre-existing server on the
     // port is not possible (there is no way to know who owns it), so the plugin
     // treats "port already serving" as a start failure and says so.
-    webCtx.effect(() => () => {
-      void gateway.stop()
-    }, 'dsh-plugin-workbuddy-gateway: gateway shutdown')
+    webCtx.effect(() => () => gateway.stop(), 'dsh-plugin-workbuddy-gateway: gateway shutdown')
 
     if (!current.autoStart) {
       gateway.note('log', 'autostart is off; the gateway stays stopped until you start it here')

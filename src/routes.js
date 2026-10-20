@@ -13,7 +13,7 @@
  */
 
 import { messageOf, methodNotAllowed, readJsonBody, refuseOrigin, sameOrigin, sendJson } from './http.js'
-import { API_KEY_REF, ROUTE_BASE } from './settings.js'
+import { API_KEY_REF, ROUTE_BASE, normalizeSettings } from './settings.js'
 
 /** How long one gateway read may take before the page is told it timed out. */
 const GATEWAY_TIMEOUT_MS = 20_000
@@ -201,7 +201,7 @@ export function mount(ctx, deps) {
     ['/health', false, route(['GET'], {
       handler: () => ({
         ok: true,
-        plugin: { version: '0.2.6', routeBase: ROUTE_BASE },
+        plugin: { version: '0.3.1', routeBase: ROUTE_BASE },
         gateway: gateway.snapshot(),
       }),
     })],
@@ -219,6 +219,17 @@ export function mount(ctx, deps) {
         }
         if (body.autoStart !== undefined) patch.autoStart = body.autoStart === true
         if (body.providerSync !== undefined) patch.providerSync = body.providerSync === true
+        if (body.autoGrowthCheckin !== undefined) {
+          if (typeof body.autoGrowthCheckin !== 'boolean') throw invalid('autoGrowthCheckin must be a boolean')
+          patch.autoGrowthCheckin = body.autoGrowthCheckin
+        }
+        for (const [key, min, max] of [['growthCheckinRetrySeconds', 30, 3600], ['growthCheckinMaxChecks', 1, 10]]) {
+          if (body[key] === undefined) continue
+          if (!Number.isInteger(body[key]) || body[key] < min || body[key] > max) {
+            throw invalid(`${key} must be an integer ${min}-${max}`)
+          }
+          patch[key] = body[key]
+        }
         if (body.gatewayDir !== undefined) {
           if (typeof body.gatewayDir !== 'string' || body.gatewayDir.trim() === '') {
             throw invalid('gatewayDir must be a non-empty path')
@@ -239,6 +250,14 @@ export function mount(ctx, deps) {
         if (patch.realm !== undefined && patch.realm !== null && gateway.running) {
           const result = await callGateway('/realm', { method: 'POST', body: { realm: patch.realm } })
           if (result?.current !== patch.realm) throw new Error('gateway did not confirm the requested realm')
+        }
+        if (gateway.running && ['autoGrowthCheckin', 'growthCheckinRetrySeconds', 'growthCheckinMaxChecks'].some((key) => key in patch)) {
+          const next = normalizeSettings({ ...settings(), ...patch })
+          const policy = { enabled: next.autoGrowthCheckin, retrySeconds: next.growthCheckinRetrySeconds, maxChecks: next.growthCheckinMaxChecks }
+          const applied = await callGateway('/scheduler/growth', { method: 'POST', body: policy })
+          if (Object.keys(policy).some((key) => applied?.[key] !== policy[key])) {
+            throw new Error('gateway did not confirm the growth check-in settings')
+          }
         }
         await updateSettings(patch)
         if (patch.realm !== undefined || patch.providerSync === true) {

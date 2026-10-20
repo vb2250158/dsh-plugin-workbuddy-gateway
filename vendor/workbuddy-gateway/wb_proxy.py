@@ -617,24 +617,18 @@ POOL = None
 SCHEDULER = None
 ACCOUNTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'accounts')
 
-
-def realm_state_file():
-    """Resolve the persisted-realm path lazily, against the *current* ACCOUNTS_DIR.
-
-    Computing this at import time pinned the file to the plugin's own vendor
-    directory, so `--accounts-dir` (which the host half always passes to keep
-    mutable state under $DSH_HOME) redirected the accounts but not the realm:
-    the realm write silently landed beside the source and was never read back,
-    so a restart reverted to the default region.
-    """
-    return os.path.join(ACCOUNTS_DIR, "active_realm.json")
-
-
 def load_persisted_realm():
     global CURRENT_REALM
-    if os.path.isfile(realm_state_file()):
+    configured = os.environ.get("WB_PROXY_REALM")
+    if configured:
+        if configured not in ("cn", "intl"):
+            raise ValueError("WB_PROXY_REALM must be cn or intl")
+        CURRENT_REALM = configured
+        return CURRENT_REALM
+    state_file = os.path.join(ACCOUNTS_DIR, "active_realm.json")
+    if os.path.isfile(state_file):
         try:
-            with open(realm_state_file(), "r", encoding="utf-8") as fh:
+            with open(state_file, "r", encoding="utf-8") as fh:
                 d = json.load(fh)
                 r = d.get("realm")
                 if r in ("intl", "cn"):
@@ -650,7 +644,7 @@ def save_persisted_realm(realm):
         CURRENT_REALM = realm
         try:
             os.makedirs(ACCOUNTS_DIR, exist_ok=True)
-            with open(realm_state_file(), "w", encoding="utf-8") as fh:
+            with open(os.path.join(ACCOUNTS_DIR, "active_realm.json"), "w", encoding="utf-8") as fh:
                 json.dump({"realm": realm, "updated_at": time.time(), "updated_iso": time.strftime("%Y-%m-%d %H:%M:%S")}, fh, indent=2)
             log("persisted active realm '%s' to disk" % realm)
         except Exception as exc:
@@ -2382,6 +2376,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, SCHEDULER.trigger_now())
             return self._json(200, {"ok": False, "msg": "调度器未初始化"})
 
+        if path == "/scheduler/growth":
+            if not SCHEDULER:
+                return self._error(503, "scheduler unavailable")
+            try:
+                config = SCHEDULER.growth.configure(payload.get("enabled"),
+                                                   payload.get("retrySeconds"), payload.get("maxChecks"))
+            except ValueError as exc:
+                return self._error(400, str(exc), "invalid_request_error")
+            return self._json(200, config)
+
         if path == "/scheduler/toggle":
             if SCHEDULER:
                 SCHEDULER.enabled = not SCHEDULER.enabled
@@ -2519,7 +2523,7 @@ class Handler(BaseHTTPRequestHandler):
             record_error(model, 503 if message.startswith("no usable account") else 502, message,
                          elapsed_ms=int((time.time() - t_start) * 1000))
             if message.startswith("no usable account"):
-                return self._error(503, message + 
+                return self._error(503, message +
                                    " - add or enable one at the dashboard (/)")
             return self._error(502, f"upstream unreachable: {exc}")
 
@@ -2622,7 +2626,7 @@ class Handler(BaseHTTPRequestHandler):
             message = str(exc)
             record_error(model, 503 if message.startswith("no usable account") else 502, message, elapsed_ms=int((time.time() - t_start) * 1000))
             if message.startswith("no usable account"):
-                return self._error(503, message + 
+                return self._error(503, message +
                                    " - add or enable one at the dashboard (/)")
             return self._error(502, f"upstream unreachable: {exc}")
 
@@ -2823,7 +2827,6 @@ def main():
         CURRENT_REALM,
         "www.workbuddy.ai" if CURRENT_REALM == "intl" else "copilot.tencent.com"))
     log("user-agent : %s" % wb_accounts.USER_AGENT)
-    log(f"listening  : http://{args.host}:{args.port}/v1  (api key: {'on' if API_KEY else 'off'})")
     log(f"dashboard  : http://{args.host}:{args.port}/")
     if args.host == "0.0.0.0":
         ips = local_ip_addresses() or ["<this-pc-ip>"]
@@ -2865,6 +2868,7 @@ def main():
         sys.stdout.flush()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
+    log(f"listening  : http://{args.host}:{server.server_port}/v1  (api key: {'on' if API_KEY else 'off'})")
     _ctrl_handler = install_console_close_handler()
     try:
         server.serve_forever()

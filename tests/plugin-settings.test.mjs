@@ -14,7 +14,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { apply } from '../src/index.js'
+import { apply, Config } from '../src/index.js'
 import { fakeWebServer } from './support.mjs'
 
 const ROUTE = '/dsh-workbuddy-gateway/api/v1'
@@ -36,8 +36,12 @@ function makeHost({ autoStart = false } = {}) {
   }
 
   const settingsService = {
-    configure: () => () => {},
-    describe: () => [],
+    installSection: (_owner, _ns, _schema, _entry, hooks) => {
+      state.hooks = hooks
+      // The host supplies settings synchronously, before autostart is checked.
+      hooks.setSource(() => state.resolved)
+    },
+    get: () => state.resolved,
     update: async (_ns, patch) => {
       state.patches.push(patch)
       state.resolved = { ...state.resolved, ...patch }
@@ -58,8 +62,6 @@ function makeHost({ autoStart = false } = {}) {
   }
 
   const ctx = {
-    settings: settingsService,
-    on: (_event, fn) => { state.hooks = { onChange: () => fn("workbuddy-gateway") } },
     logger: { warn() {}, info() {}, error() {} },
     get: (name) => (name === 'credentials' ? credentials : undefined),
     effect: () => () => {},
@@ -72,14 +74,20 @@ function makeHost({ autoStart = false } = {}) {
   return { ctx, state, webServer }
 }
 
-/** Mount the plugin and prime the section with its own source thunk. */
+/** Mount the plugin with the host's settings lifecycle. */
 function mountPlugin(options) {
   const host = makeHost(options)
-  apply(host.ctx, { get: () => host.state.resolved })
+  apply(host.ctx, {})
   assert.ok(host.state.hooks, 'apply() must install the settings section')
-  host.state.hooks.onChange()
   return host
 }
+
+test('disabled autostart is applied before web routes mount', async () => {
+  const { webServer } = mountPlugin()
+  const reading = await webServer.call(`${ROUTE}/state`)
+  assert.ok(reading.payload.data.gateway.log.some((entry) => entry.text.includes('autostart is off')))
+  assert.equal(reading.payload.data.gateway.state, 'stopped')
+})
 
 test('a committed realm change reaches /state without a remount', async () => {
   const { state, webServer } = mountPlugin()
@@ -120,4 +128,70 @@ test('the cached section is corrected after a commit even before onChange fires'
   assert.equal(committed.payload.data.settings.realm, 'intl')
   const reading = await webServer.call(`${ROUTE}/state`)
   assert.equal(reading.payload.data.settings.realm, 'intl')
+})
+
+test('Config forms work without installSection and keep one owner listener across Settings replacements', async () => {
+  const webServer = fakeWebServer()
+  const config = Config({ autoStart: false, providerSync: false })
+  const owner = { entry: { options: { id: 'custom-workbuddy' } } }
+  const listeners = new Set()
+  const childDisposers = []
+  const ownerDisposers = []
+  const patches = []
+  let mountSettings
+  const credentials = { resolve: async () => undefined }
+  const listen = (disposers, event, callback) => {
+    assert.equal(event, 'loader/volatile-update')
+    listeners.add(callback)
+    const dispose = () => listeners.delete(callback)
+    disposers.push(dispose)
+    return dispose
+  }
+  const settings = {
+    configure(presentation, fiber) {
+      assert.deepEqual(presentation, { auto: false })
+      assert.equal(fiber, owner)
+      return () => {}
+    },
+    async update(namespace, patch) {
+      patches.push({ namespace, patch })
+      config[Symbol.for('cosmokit.volatile.write')]({ ...config.get(), ...patch })
+      for (const listener of listeners) listener()
+    },
+  }
+  const ctx = {
+    fiber: owner, settings, webServer,
+    logger: { warn() {}, info() {}, error() {} },
+    get: name => name === 'credentials' ? credentials : undefined,
+    effect: factory => { const dispose = factory(); ownerDisposers.push(dispose); return dispose },
+    on: (event, callback) => listen(ownerDisposers, event, callback),
+    inject(deps, callback) {
+      if (deps.includes('settings')) {
+        mountSettings = () => callback({
+          settings,
+          effect: factory => { const dispose = factory(); childDisposers.push(dispose); return dispose },
+          on: (event, listener) => listen(childDisposers, event, listener),
+        })
+        mountSettings()
+      }
+      if (deps.includes('webServer')) callback(ctx)
+    },
+  }
+  try {
+    apply(ctx, config)
+    const committed = await webServer.call(`${ROUTE}/config`, { method: 'POST', body: { realm: 'intl' } })
+    assert.equal(committed.statusCode, 200)
+    assert.equal(committed.payload.data.settings.realm, 'intl')
+    assert.deepEqual(patches, [{ namespace: 'custom-workbuddy', patch: { realm: 'intl' } }])
+    await settings.update('custom-workbuddy', { realm: 'cn' })
+    const reading = await webServer.call(`${ROUTE}/state`)
+    assert.equal(reading.payload.data.settings.realm, 'cn')
+    for (const dispose of childDisposers.reverse()) await dispose()
+    mountSettings()
+    assert.equal(listeners.size, 1, 'replacing Settings must not duplicate the owner Config listener')
+  } finally {
+    for (const dispose of childDisposers.reverse()) await dispose()
+    for (const dispose of ownerDisposers.reverse()) await dispose()
+  }
+  assert.equal(listeners.size, 0)
 })

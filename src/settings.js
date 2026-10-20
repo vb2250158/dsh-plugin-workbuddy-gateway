@@ -53,6 +53,9 @@ export const DEFAULT_GATEWAY_DIR = ''
  * @property {number} port         - Gateway listen port.
  * @property {boolean} autoStart   - Spawn the gateway when the plugin mounts.
  * @property {boolean} providerSync- Whether the plugin keeps its `llm-pi-ai` route present.
+ * @property {boolean} autoGrowthCheckin - Confirm daily domestic growth activity automatically.
+ * @property {number} growthCheckinRetrySeconds - Delay between unconfirmed activity checks.
+ * @property {number} growthCheckinMaxChecks - Daily verification budget per account.
  * @property {string} gatewayDir   - Directory holding `wb_proxy.py`.
  * @property {string} pythonPath   - Python executable; `""` means resolve from PATH.
  * @property {string|null} realm   - `"intl"`, `"cn"`, or null for the gateway default.
@@ -63,6 +66,9 @@ export const SETTINGS_BASE = {
   port: DEFAULT_PORT,
   autoStart: true,
   providerSync: true,
+  autoGrowthCheckin: false,
+  growthCheckinRetrySeconds: 300,
+  growthCheckinMaxChecks: 3,
   gatewayDir: DEFAULT_GATEWAY_DIR,
   pythonPath: '',
   realm: null,
@@ -82,10 +88,15 @@ export function normalizeSettings(raw) {
   const source = raw !== null && typeof raw === 'object' ? raw : {}
   const port = Number(source.port)
   const realm = source.realm
+  const retry = source.growthCheckinRetrySeconds
+  const checks = source.growthCheckinMaxChecks
   return {
     port: Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_PORT,
     autoStart: source.autoStart !== false,
     providerSync: source.providerSync !== false,
+    autoGrowthCheckin: source.autoGrowthCheckin === true,
+    growthCheckinRetrySeconds: Number.isInteger(retry) && retry >= 30 && retry <= 3600 ? retry : 300,
+    growthCheckinMaxChecks: Number.isInteger(checks) && checks >= 1 && checks <= 10 ? checks : 3,
     // An empty string is the meaningful default here ("use the bundled
     // gateway"), so only a wrong *type* falls back rather than an empty value.
     gatewayDir: typeof source.gatewayDir === 'string' ? source.gatewayDir.trim() : DEFAULT_GATEWAY_DIR,

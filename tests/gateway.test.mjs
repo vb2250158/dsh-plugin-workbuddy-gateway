@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { GATEWAY_STATE, Gateway, baseUrlFor, pythonCandidates } from '../src/gateway.js'
+import { GATEWAY_STATE, Gateway, baseUrlFor, confirmGatewayRealm, pythonCandidates } from '../src/gateway.js'
 import { fakeSpawn } from './support.mjs'
 
 const SETTINGS = {
@@ -102,6 +102,19 @@ test('start passes the port, the api key, and the state-redirect env', async () 
   // Mutable gateway state must never land in the checkout.
   assert.equal(call.options.env.ACCOUNTS_DIR, 'C:/home/workbuddy/accounts')
   assert.equal(call.options.env.WB_PROXY_USAGE_DIR, 'C:/home/workbuddy/usage')
+  assert.equal(call.options.env.WB_GROWTH_CHECKIN_ENABLED, '0')
+})
+
+test('growth automation and its verification budget reach the child at startup', async () => {
+  const { gateway, spawner } = harness({ settings: { ...SETTINGS, autoGrowthCheckin: true,
+    growthCheckinRetrySeconds: 60, growthCheckinMaxChecks: 4 } })
+  const started = gateway.start()
+  spawner.last().announceReady()
+  await started
+  const env = spawner.calls[0].options.env
+  assert.equal(env.WB_GROWTH_CHECKIN_ENABLED, '1')
+  assert.equal(env.WB_GROWTH_CHECKIN_RETRY_SECONDS, '60')
+  assert.equal(env.WB_GROWTH_CHECKIN_MAX_CHECKS, '4')
 })
 
 test('no --api-key argument is passed when no token is configured', async () => {
@@ -112,7 +125,7 @@ test('no --api-key argument is passed when no token is configured', async () => 
   assert.equal(spawner.calls[0].args.includes('--api-key'), false)
 })
 
-test('a configured realm is applied after readiness, not on the command line', async () => {
+test('realm confirmation runs after listener readiness', async () => {
   const applied = []
   const { gateway, spawner } = harness({
     settings: { ...SETTINGS, realm: 'cn' },
@@ -127,7 +140,7 @@ test('a configured realm is applied after readiness, not on the command line', a
   assert.deepEqual(applied, ['http://127.0.0.1:18088/v1'])
 })
 
-test('a post-ready failure degrades the reading without faking a dead gateway', async () => {
+test('a realm setup failure stops the child instead of serving the wrong region', async () => {
   const { gateway, spawner } = harness({
     onReady: async () => { throw new Error('realm endpoint refused') },
   })
@@ -135,9 +148,90 @@ test('a post-ready failure degrades the reading without faking a dead gateway', 
   spawner.last().announceReady()
   const result = await started
 
-  assert.equal(result.ok, true)
-  assert.equal(gateway.state, GATEWAY_STATE.running)
+  assert.equal(result.ok, false)
+  assert.equal(gateway.state, GATEWAY_STATE.failed)
+  assert.equal(spawner.last().killRequests, 1)
+  assert.equal(gateway.snapshot().pid, null)
   assert.ok(gateway.snapshot().log.some((entry) => entry.text.includes('post-ready setup failed')))
+})
+
+test('running waits for realm confirmation and stop during setup stays stopped', async () => {
+  let confirm
+  let launchedKey
+  const { gateway, spawner } = harness({
+    onReady: ({ apiKey }) => {
+      launchedKey = apiKey
+      return new Promise((resolve) => { confirm = resolve })
+    },
+  })
+  const started = gateway.start({ apiKey: 'launch-key' })
+  spawner.last().announceReady()
+  await waitFor(() => confirm !== undefined)
+  assert.equal(gateway.state, GATEWAY_STATE.starting)
+  assert.equal(gateway.running, false)
+  assert.equal(launchedKey, 'launch-key')
+  await gateway.stop()
+  confirm()
+  assert.equal((await started).ok, false)
+  assert.equal(gateway.state, GATEWAY_STATE.stopped)
+})
+
+test('a failed confirmation from an old start cannot stop its replacement', async () => {
+  let rejectOld
+  const { gateway, spawner } = harness({
+    onReady: () => rejectOld === undefined
+      ? new Promise((_resolve, reject) => { rejectOld = reject })
+      : Promise.resolve(),
+  })
+  const oldStart = gateway.start()
+  spawner.last().announceReady()
+  await waitFor(() => rejectOld !== undefined)
+  const restarted = gateway.restart()
+  await waitFor(() => spawner.children.length === 2)
+  spawner.last().announceReady()
+  assert.equal((await restarted).ok, true)
+  rejectOld(new Error('old setup failed'))
+  assert.equal((await oldStart).ok, false)
+  assert.equal(gateway.running, true)
+  assert.equal(spawner.last().killRequests, 0)
+  await gateway.stop()
+})
+
+test('realm confirmation authenticates and rejects unconfirmed HTTP responses', async (t) => {
+  let response
+  const request = t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    assert.equal(options.headers.authorization, 'Bearer launch-key')
+    assert.equal(JSON.parse(options.body).realm, 'cn')
+    assert.ok(options.signal instanceof AbortSignal)
+    return response
+  })
+  const options = { baseUrl: 'http://127.0.0.1:18088/v1', apiKey: 'launch-key', realm: 'cn' }
+  for (const status of [401, 500]) {
+    response = new Response('{}', { status })
+    await assert.rejects(confirmGatewayRealm(options), new RegExp(`HTTP ${status}`))
+  }
+  response = Response.json({ current: 'intl' })
+  await assert.rejects(confirmGatewayRealm(options), /did not confirm/)
+  response = Response.json({ current: 'cn' })
+  await confirmGatewayRealm(options)
+  assert.equal(request.mock.calls[0].arguments[0], 'http://127.0.0.1:18088/realm')
+  await confirmGatewayRealm({ ...options, realm: null })
+  assert.equal(request.mock.callCount(), 4)
+})
+
+test('a configured region reaches the child before HTTP setup and changes on restart', async () => {
+  const { gateway, spawner, setSettings } = harness({ settings: { ...SETTINGS, realm: 'cn' } })
+  let started = gateway.start()
+  spawner.last().announceReady()
+  await started
+  assert.equal(spawner.calls[0].options.env.WB_PROXY_REALM, 'cn')
+  setSettings({ realm: 'intl' })
+  started = gateway.restart()
+  await waitFor(() => spawner.children.length === 2)
+  spawner.last().announceReady()
+  await started
+  assert.equal(spawner.calls[1].options.env.WB_PROXY_REALM, 'intl')
+  await gateway.stop()
 })
 
 test('an exit before readiness fails the start and reports why', async () => {

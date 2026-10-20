@@ -15,14 +15,39 @@ export function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload))
 }
 
+/** Header value the bundled client sends through the Desktop bridge. */
+const DESKTOP_REQUEST_HEADER = 'x-dsh-workbuddy-request'
+
+/** Header value that identifies a request created by the bundled client. */
+const DESKTOP_REQUEST_VALUE = 'desktop'
+
 /**
- * True when the request's Origin matches its Host. Required on every route that
- * changes host state, so a cross-site page cannot reach it.
+ * True when the request's Origin matches its Host, or when the bundled Desktop
+ * client identifies a request whose Origin the bridge removed. Required on
+ * every route that changes host state, so a cross-site page cannot reach it.
  */
 export function sameOrigin(request) {
   const origin = request.headers.origin
   const host = request.headers.host
-  if (origin === undefined || host === undefined) return false
+  if (host === undefined) return false
+  // Some Desktop forwarding paths preserve the app Origin instead of
+  // removing it before reaching the local HTTP host.
+  if (origin === 'dsh-app://app') return true
+  // DSH Desktop strips Origin while forwarding requests to its local HTTP
+  // host. The client marker survives that hop even when Referer is absent.
+  if (origin === undefined) {
+    if (request.headers[DESKTOP_REQUEST_HEADER] === DESKTOP_REQUEST_VALUE) return true
+    // Keep accepting the exact app Referer for older clients that predate the
+    // marker. It is only a fallback when Origin is missing.
+    const referer = request.headers.referer
+    if (typeof referer !== 'string') return false
+    try {
+      const url = new URL(referer)
+      return url.protocol === 'dsh-app:' && url.hostname === 'app'
+    } catch {
+      return false
+    }
+  }
   try {
     return new URL(origin).host === host
   } catch {

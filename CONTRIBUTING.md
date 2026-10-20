@@ -21,16 +21,14 @@ npm run preflight        # proves spawn + piped stdio work on your machine
 node scripts/check-package.mjs   # pre-publish check
 ```
 
-The integration scripts need the harness:
+The current-settings integration check needs a built harness CLI or the official Desktop CLI. Run it from this checkout:
 
 ```bash
-cd /path/to/deepseek-harness
-node --import tsx/esm /path/to/dsh-plugin-workbuddy-gateway/scripts/verify-settings-section.mjs
-node --import tsx/esm /path/to/dsh-plugin-workbuddy-gateway/scripts/verify-provider-route.mjs
+node scripts/verify-profile-settings.mjs /path/to/deepseek-harness/apps/cli/lib/bin.js
+# On Windows, the first argument may instead be the installed Desktop dsh.cmd.
 ```
 
-Both run against throwaway files in the OS temp directory. Neither touches a real
-`$DSH_HOME`.
+This launches a disposable profile through `dsh`, loads the real Config editor, Settings and pi-ai services, and checks HTTP settings edits, external edits, provider writes, sibling preservation and restart persistence. It disables gateway startup and supplies no real credentials. An optional second argument selects another plugin directory, such as an extracted release, for regression comparison. The old `verify-settings-section.mjs` and `verify-provider-route.mjs` scripts target the removed legacy Settings service and are only useful with a corresponding old harness.
 
 ## What a change needs
 
@@ -83,9 +81,10 @@ This plugin uses DSH internals that are not a stable public contract:
 
 | Used | For |
 |---|---|
-| `settings.installSection` | register this plugin's own settings section |
+| volatile `Config`, `settings.configure`, and `loader/volatile-update` | expose live configuration and the custom settings page on current DSH |
+| `settings.installSection`, when available | register the section on legacy hosts only |
 | `settings.describe({ redactSecrets })` | must be able to serialize the section's schema |
-| `settings.mutate` on the `llm-pi-ai` namespace | add/remove exactly one provider route |
+| `settings.update` on the plugin entry id and `settings.mutate` on `llm-pi-ai` | persist plugin settings and add/remove exactly one provider route |
 | `webServer.register` | the plugin's HTTP surface |
 | `credentials.resolve` / `set` / `unset` | hold the gateway's bearer token |
 | the `settings.section` client slot | render the settings page |
