@@ -90,6 +90,7 @@ test('same-session concurrency is refused before a second transport starts', asy
   } })
   const first = s.owner.execute(invocation())
   await started
+  assert.deepEqual(s.owner.activeSessionIds(), [agent.session.id])
   assert.match((await s.owner.execute(invocation())).text, /仍在运行/u)
   assert.equal(s.options.length, 1)
   finish()
@@ -135,6 +136,7 @@ test('stop waits for confirmed protocol cancellation and preserves partial gener
   } })
   const first = s.owner.execute(invocation())
   await started
+  assert.deepEqual(s.owner.activeSessionIds(), [agent.session.id])
   assert.equal((await s.owner.stop({ agent })).kind, 'success')
   assert.match((await first).text, /already produced/u)
   assert.equal(s.records.get(agent.session.id).state, 'ready')
@@ -155,6 +157,7 @@ test('unknown managed range stays owned and blocks subsequent invocation and res
     run: async request => { await request.onSession('unknown-range'); throw Object.assign(Error('range unknown'), { code: 'EXIT_UNKNOWN', cleanup: 'unknown' }) },
   }) })
   await s.owner.execute(invocation())
+  assert.deepEqual(s.owner.activeSessionIds(), [agent.session.id])
   assert.match((await s.owner.execute(invocation())).text, /仍在运行/u)
   assert.equal((await s.owner.reset({ agent })).kind, 'error')
   await assert.rejects(s.owner.dispose(), /remain unconfirmed/u)
@@ -180,7 +183,7 @@ test('domain rejects malformed or extra credential fields', () => {
   const valid = {
     remoteSessionId: null, model: 'deepseek-v4.1-flash', cwd: paths.cwd, cliEntry: paths.entry,
     nodePath: paths.node, realm: 'cn', authSource: 'official-cli-login', state: 'ready',
-    operationId: 'b1ae077f-580c-415a-8555-91ad6d4f1384', updatedAt: new Date().toISOString(),
+    operationId: '00000000-0000-4000-8000-000000000001', updatedAt: new Date().toISOString(),
   }
   assert.equal(schema.safeParse(valid).success, true)
   assert.equal(schema.safeParse({ ...valid, accessToken: 'forbidden' }).success, false)
@@ -194,7 +197,7 @@ test('mount registers direct commands through optional services and closes its o
   mountOfficialCommands(ctx, () => settings)
   assert.deepEqual(injection.services, ['commands', 'storageDomain', 'subprocess', 'workingDirectory'])
   await injection.callback({
-    commands: { register: definition => registrations.push(definition) },
+    commands: { register: definition => registrations.push(definition), registerActivitySource: source => { assert.deepEqual(source(), []); return () => {} } },
     storageDomain: { open: async spec => {
       opened++
       assert.equal(spec, OFFICIAL_DOMAIN)
@@ -206,6 +209,9 @@ test('mount registers direct commands through optional services and closes its o
   })
   assert.deepEqual(registrations.map(item => item.name), ['codebuddy', 'codebuddy-stop', 'codebuddy-new'])
   assert.equal(typeof registrations[0].input.hint, 'string')
+  assert.equal(registrations[0].startsConversation, true)
+  assert.equal(registrations[1].startsConversation, undefined)
+  assert.equal(registrations[2].startsConversation, undefined)
   assert.equal(registrations[1].input, undefined)
   assert.equal(registrations[2].input, undefined)
   assert.equal((await registrations[0].handler(invocation())).kind, 'error')
@@ -220,4 +226,36 @@ test('mount registers direct commands through optional services and closes its o
 test('the official mapping domain satisfies the Host storage unit-name grammar', () => {
   assert.match(OFFICIAL_DOMAIN.name, /^[a-z][a-z0-9_]*$/)
   for (const table of Object.keys(OFFICIAL_DOMAIN.tables)) assert.match(table, /^[a-z][a-z0-9_]*$/)
+})
+
+test('missing Host activity registration blocks only official tasks before opening storage', async () => {
+  const commands = []
+  let opened = false
+  mountOfficialCommands({ inject: (_services, callback) => callback({
+    commands: { register: definition => commands.push(definition) },
+    storageDomain: { open: async () => { opened = true; throw Error('must not open') } },
+    subprocess: { spawn() { throw Error('must not spawn') } },
+    workingDirectory: { get: () => paths.cwd }, effect() {},
+  }) }, () => ({ officialCliEnabled: true }))
+  assert.match((await commands[0].handler(invocation())).text, /活动守卫接口/u)
+  assert.equal(opened, false)
+})
+
+test('stop can reconcile a retained range without replaying or clearing an unknown task result', async () => {
+  let cleanup = 'unknown', observed = 0
+  const s = setup({ factory: () => ({
+    snapshot: () => ({ cleanup }),
+    reconcileExit: async () => { observed++; cleanup = 'clean'; return true },
+    run: async request => {
+      await request.onSession('unknown-result')
+      throw Object.assign(Error('range unknown'), { code: 'EXIT_UNKNOWN', cleanup: 'unknown' })
+    },
+  }) })
+  await s.owner.execute(invocation())
+  assert.deepEqual(s.owner.activeSessionIds(), [agent.session.id])
+  assert.equal((await s.owner.stop({ agent })).kind, 'error')
+  assert.deepEqual(s.owner.activeSessionIds(), [])
+  assert.equal(observed, 1)
+  assert.equal(s.records.get(agent.session.id).state, 'unknown')
+  assert.equal((await s.owner.reset({ agent })).kind, 'error')
 })

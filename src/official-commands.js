@@ -165,6 +165,7 @@ export function createOfficialCommands({
     if (!operation) return success('本会话没有正在运行的 CodeBuddy 操作。')
     operation.controller.abort()
     await operation.finished
+    if (operation.client?.snapshot().cleanup === 'unknown' && await operation.client.reconcileExit()) active.delete(id)
     if (operation.client?.snapshot().cleanup === 'unknown') {
       return failure('已请求停止，但尚不能确认官方 CLI 已退出；保留任务归属，禁止自动重试。')
     }
@@ -185,6 +186,8 @@ export function createOfficialCommands({
 
   return {
     execute, stop, reset,
+    // Retained unknown ranges are activity until their owner verifies exit.
+    activeSessionIds: () => Object.freeze([...active.keys()]),
     async dispose() {
       disposed = true
       const operations = [...active.values()]
@@ -206,7 +209,10 @@ export function createOfficialCommands({
 export function mountOfficialCommands(ctx, readSettings) {
   ctx.inject(['commands', 'storageDomain', 'subprocess', 'workingDirectory'], injected => {
     let initialization
+    let currentOwner
     let closed = false
+    const activitySupported = typeof injected.commands.registerActivitySource === 'function'
+    if (activitySupported) injected.commands.registerActivitySource(() => currentOwner?.activeSessionIds() ?? [])
     // A disabled bridge must not open storage or affect gateway startup.
     const initialize = () => {
       if (!initialization) {
@@ -217,6 +223,7 @@ export function mountOfficialCommands(ctx, readSettings) {
             directory: session => injected.workingDirectory.get(session),
             spawn: spec => injected.subprocess.spawn(spec),
           })
+          currentOwner = owner
           return { domain, owner }
         })().catch(caught => {
           initialization = undefined
@@ -239,6 +246,7 @@ export function mountOfficialCommands(ctx, readSettings) {
     ]) {
       injected.commands.register({
         name, description,
+        ...(operation === 'execute' ? { startsConversation: true } : {}),
         ...(operation === 'execute' ? { input: { hint: '描述要交给官方 CodeBuddy 的任务' } } : {}),
         handler: async invocation => {
           if (closed) return failure('官方 CodeBuddy 入口正在关闭。')
@@ -248,6 +256,7 @@ export function mountOfficialCommands(ctx, readSettings) {
           if (operation === 'stop' && !initialization) {
             return success('当前入口没有持有运行中的 CodeBuddy 操作；历史记录保持原样。')
           }
+          if (operation === 'execute' && !activitySupported) return failure('当前 DSH 命令服务缺少活动守卫接口；请更新已验证的宿主后再运行官方任务。')
           let owner
           try {
             const initialized = await initialize()

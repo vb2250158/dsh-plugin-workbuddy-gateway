@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Declare task conversation activity and report active or retained-unconfirmed CLI ranges through the Host command activity interface, keeping task history visible and idle handoff blocked during work.
+
 - Use a storage-domain name accepted by the Host backend so the first official command can persist its session binding.
 
 - Use the official print/stream-json protocol for one-turn lifecycle, fixed-session continuation and normal interrupt/EOF exit. ACP process shutdown was not accepted; unknown outcomes and original diagnostics remain separate from successful replies.
