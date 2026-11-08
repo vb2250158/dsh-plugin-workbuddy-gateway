@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add opt-in direct official CodeBuddy CLI commands (`/codebuddy`, `/codebuddy-stop`, `/codebuddy-new`) using the CLI's normal domestic login, its own Agent session, and DSH command result persistence. The command path does not call the selected DSH model or inject its result into that model.
+- Persist each DSH-to-CLI session binding through the Host storage domain, preserve the selected model by default, and reject unknown prior outcomes rather than automatically resubmitting a task. Default tools are limited to `Read`, `Glob`, and `Grep`; authorization requests are rejected. This path does not provide all DSH tools.
+- Keep gateway `11128` refusals terminal. The official CLI path does not extract desktop credentials, copy gateway-vault tokens, or rewrite request identities to evade channel checks. A user's account entitlement and real reply still require local acceptance.
+
 - Treat explicit upstream channel rejection `11128` as terminal before account rotation. Preserve the HTTP status, expose a concise structured error and bounded request identifier, and keep account restrictions and model-rate-limit handling unchanged. This diagnostic fix does not grant upstream channel approval.
 
 ## 0.3.1 - 2026-10-20

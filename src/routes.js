@@ -201,7 +201,7 @@ export function mount(ctx, deps) {
     ['/health', false, route(['GET'], {
       handler: () => ({
         ok: true,
-        plugin: { version: '0.3.1', routeBase: ROUTE_BASE },
+        plugin: { version: '0.4.0', routeBase: ROUTE_BASE },
         gateway: gateway.snapshot(),
       }),
     })],
@@ -239,6 +239,15 @@ export function mount(ctx, deps) {
         if (body.pythonPath !== undefined) {
           if (typeof body.pythonPath !== 'string') throw invalid('pythonPath must be a string')
           patch.pythonPath = body.pythonPath.trim()
+        }
+        if (body.officialCliEnabled !== undefined) {
+          if (typeof body.officialCliEnabled !== 'boolean') throw invalid('officialCliEnabled must be a boolean')
+          patch.officialCliEnabled = body.officialCliEnabled
+        }
+        for (const key of ['officialCliNode', 'officialCliEntry', 'officialCliModel']) {
+          if (body[key] === undefined) continue
+          if (typeof body[key] !== 'string') throw invalid(`${key} must be a string`)
+          patch[key] = body[key].trim()
         }
         if (body.realm !== undefined) {
           if (body.realm !== null && body.realm !== 'intl' && body.realm !== 'cn') {

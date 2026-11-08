@@ -4,9 +4,32 @@ Manage WorkBuddy accounts, a local OpenAI-compatible gateway, and DSH model rout
 
 [中文](README.md) | English
 
-**Version: 0.3.0.** Supports the current Config-based Settings API, verified against the official Windows DSH `0.2.1-rc.2` installation for settings edits, provider writes and restart persistence. Install from the fixed Git tag `v0.3.0`. No plugin market is required.
+**Source version: 0.4.0.** Adds optional official CLI task commands. Source validation, candidate acceptance and local installation are recorded separately. Install a reviewed and verified fixed Git commit. No plugin market is required.
 
 This is an unofficial integration using WorkBuddy subscription endpoints and DSH internal APIs. Those interfaces can change, and using them may violate service terms or trigger account restrictions.
+
+## Official CLI task commands (optional)
+
+This route calls a normally signed-in domestic CodeBuddy CLI. WorkBuddy and CodeBuddy share credits for the same account; CLI access depends on the account plan. Check the [official pricing](https://www.codebuddy.cn/docs/workbuddy/Pricing) and accept the actual local login and reply. This runs the official Agent rather than replacing the `workbuddy` model provider; it does not fix gateway `11128` refusals.
+
+Install the official `@tencent-ai/codebuddy-code` separately, run `codebuddy`, choose Chinese Site, and finish normal login with the same account. Do not import desktop tokens or put passwords, API keys, or tokens in this configuration. Enable the route in the machine-local profile plugin configuration:
+
+```yaml
+officialCliEnabled: true
+officialCliNode: /absolute/path/to/node
+officialCliEntry: /absolute/path/to/codebuddy-code/bin/codebuddy
+officialCliModel: ''
+```
+
+Keep these absolute paths machine-local. An empty `officialCliNode` uses the Host's Node executable. `officialCliEntry` must identify the independently installed official entry script. An empty `officialCliModel` preserves the receiving DSH session's model selection; an explicit value pins this official Agent without changing DSH's selected model. The account must support that model; the plugin does not silently fall back.
+
+- Send `/codebuddy your task`. Later tasks in the same DSH session resume its bound official CLI session; other DSH sessions have independent bindings.
+- Send `/codebuddy-stop` to request normal cancellation of that session's active official task. DSH's ordinary stop button does not necessarily cancel an independent command task.
+- While idle, send `/codebuddy-new` to detach the current binding. History is retained, and the next task creates a new official CLI session.
+
+DSH persists input and result as `command/run` and `command/done`, so they remain visible after refresh. Results are not injected back into the selected DSH model. The official CLI keeps its own session history; this plugin does not synchronize either history across machines. Default tools are limited to `Read`, `Glob`, and `Grep`; permission requests are rejected. File edits, command execution, and the full DSH tool set are unavailable. Task-authorized reads are not a filesystem sandbox.
+
+Official login, account entitlement, and credit limits still apply. An unknown process or task outcome stays unresolved and is not automatically replayed. The route is off by default, and absent optional Host services do not prevent the gateway or DSH core from running.
 
 ## Requirements and platforms
 

@@ -53,10 +53,12 @@ provider routes are written through `settings.mutate`, why `running` is a real
 getter) are each a bug that was fixed once and would quietly return without the
 rationale attached.
 
-**No new runtime dependencies.** The host half imports only Node builtins, and
-the client bundle requires only `react`. This is deliberate: the plugin is
-installed by `link:` into a DSH profile, where a dependency the profile does not
-also have is a resolution failure waiting to happen.
+**Reuse Host runtime dependencies.** The host gateway uses Node builtins. The
+official CLI command path also declares the Host's `zod` as a peer to validate
+its storage-domain records, and the client bundle requires `react`. Declare
+services and imported packages as peers, validate their actual profile
+resolution, and do not bundle another DSH runtime. The official CLI is an
+independent user installation, not a copied plugin dependency.
 
 ## Boundaries
 

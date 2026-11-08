@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { normalizeSettings, SETTINGS_BASE } from '../src/settings.js'
 
 /** The client source, read once: every test mounts the same artifact. */
 const CLIENT_SOURCE = readFileSync(new URL('../src/client/index.js', import.meta.url), 'utf8')
@@ -330,4 +331,28 @@ test('switching realms replaces the old models together with the saved selection
     assert.match(text, /new-china-model/)
     assert.doesNotMatch(text, /old-global-model/)
   } finally { client.restore() }
+})
+
+
+test('official CLI settings stay disabled unless explicitly enabled and preserve per-machine values', () => {
+  const defaults = normalizeSettings({})
+  assert.equal(defaults.officialCliEnabled, false)
+  assert.equal(defaults.officialCliNode, '')
+  assert.equal(defaults.officialCliEntry, '')
+  assert.equal(defaults.officialCliModel, '')
+  const settings = normalizeSettings({
+    officialCliEnabled: true,
+    officialCliNode: ' /tools/node ',
+    officialCliEntry: ' /tools/codebuddy/bin/codebuddy ',
+    officialCliModel: ' deepseek-v4.1-flash ',
+  })
+  assert.equal(settings.officialCliEnabled, true)
+  assert.equal(settings.officialCliNode, '/tools/node')
+  assert.equal(settings.officialCliEntry, '/tools/codebuddy/bin/codebuddy')
+  assert.equal(settings.officialCliModel, 'deepseek-v4.1-flash')
+  assert.equal(normalizeSettings({ officialCliEnabled: 'true' }).officialCliEnabled, false)
+  assert.equal(normalizeSettings({ officialCliEntry: 42 }).officialCliEntry, '')
+  assert.equal(normalizeSettings({ officialCliNode: {} }).officialCliNode, '')
+  assert.equal(normalizeSettings({ officialCliModel: null }).officialCliModel, '')
+  assert.equal(SETTINGS_BASE.officialCliEnabled, false)
 })

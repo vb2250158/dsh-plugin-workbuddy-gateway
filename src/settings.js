@@ -59,6 +59,10 @@ export const DEFAULT_GATEWAY_DIR = ''
  * @property {string} gatewayDir   - Directory holding `wb_proxy.py`.
  * @property {string} pythonPath   - Python executable; `""` means resolve from PATH.
  * @property {string|null} realm   - `"intl"`, `"cn"`, or null for the gateway default.
+ * @property {boolean} officialCliEnabled - Enable direct commands for the normally signed-in official domestic CLI.
+ * @property {string} officialCliNode - Absolute Node executable; empty uses the current Host executable.
+ * @property {string} officialCliEntry - Absolute entry script of the independently installed official CLI.
+ * @property {string} officialCliModel - Explicit official model; empty preserves the receiving session model.
  */
 
 /** Composition default; the base layer `installSection` falls back to. */
@@ -72,6 +76,10 @@ export const SETTINGS_BASE = {
   gatewayDir: DEFAULT_GATEWAY_DIR,
   pythonPath: '',
   realm: null,
+  officialCliEnabled: false,
+  officialCliNode: '',
+  officialCliEntry: '',
+  officialCliModel: '',
 }
 
 /**
@@ -102,5 +110,9 @@ export function normalizeSettings(raw) {
     gatewayDir: typeof source.gatewayDir === 'string' ? source.gatewayDir.trim() : DEFAULT_GATEWAY_DIR,
     pythonPath: typeof source.pythonPath === 'string' ? source.pythonPath.trim() : '',
     realm: realm === 'intl' || realm === 'cn' ? realm : null,
+    officialCliEnabled: source.officialCliEnabled === true,
+    officialCliNode: typeof source.officialCliNode === 'string' ? source.officialCliNode.trim() : '',
+    officialCliEntry: typeof source.officialCliEntry === 'string' ? source.officialCliEntry.trim() : '',
+    officialCliModel: typeof source.officialCliModel === 'string' ? source.officialCliModel.trim() : '',
   }
 }

@@ -195,3 +195,37 @@ test('Config forms work without installSection and keep one owner listener acros
   }
   assert.equal(listeners.size, 0)
 })
+
+
+test('official CLI configuration writes preserve gateway settings and reject invalid field types', async () => {
+  const { state, webServer } = mountPlugin()
+  const patch = {
+    officialCliEnabled: true,
+    officialCliNode: ' /tools/node ',
+    officialCliEntry: ' /tools/codebuddy/bin/codebuddy ',
+    officialCliModel: '',
+  }
+  const response = await webServer.call(`${ROUTE}/config`, { method: 'POST', body: patch })
+  assert.equal(response.payload.ok, true)
+  assert.deepEqual(state.patches.at(-1), {
+    officialCliEnabled: true,
+    officialCliNode: '/tools/node',
+    officialCliEntry: '/tools/codebuddy/bin/codebuddy',
+    officialCliModel: '',
+  })
+  assert.equal(response.payload.data.settings.officialCliEnabled, true)
+  assert.equal(response.payload.data.settings.realm, 'cn')
+  assert.equal(response.payload.data.settings.autoStart, false)
+  const before = state.patches.length
+  for (const body of [
+    { officialCliEnabled: 'true' },
+    { officialCliNode: 42 },
+    { officialCliEntry: null },
+    { officialCliModel: {} },
+  ]) {
+    const invalid = await webServer.call(`${ROUTE}/config`, { method: 'POST', body })
+    assert.equal(invalid.statusCode, 400)
+    assert.equal(invalid.payload.ok, false)
+  }
+  assert.equal(state.patches.length, before)
+})

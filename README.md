@@ -4,7 +4,7 @@
 
 中文 | [English](README.en.md)
 
-**当前版本：0.3.0。** 已适配新版 Config 设置接口，并通过 Windows 官方安装版 DSH `0.2.1-rc.2` 的配置读写、模型路由及重启验证。安装请固定到 Git 标签 `v0.3.0`。此仓库提供源码安装，不要求安装插件市场。
+**当前源码版本：0.4.0。** 新增可选的官方 CLI 任务入口；源码、候选验收和本机安装状态分别记录。安装使用经过审阅和验证的固定 Git 提交。此仓库提供源码安装，不要求安装插件市场。
 
 ## 功能
 
@@ -16,6 +16,29 @@
 - 将网关模型写入 DSH 的 `llm-pi-ai` 提供方配置。
 
 本插件不是 WorkBuddy / 腾讯官方集成，依赖订阅端内部接口和 DSH 内部扩展接口。接口变化可能导致功能失效，使用也可能触发服务条款限制或账号风控。
+
+## 官方 CLI 任务入口（可选）
+
+这个入口直接调用正常登录的国内 CodeBuddy CLI。WorkBuddy 与 CodeBuddy 的同账号积分共享，CLI 权益取决于当前账号套餐；以[官方定价](https://www.codebuddy.cn/docs/workbuddy/Pricing)和本机实际登录验收为准。它运行的是官方 Agent，不是原 `workbuddy` 模型提供方的替代接口，也不代表原网关的 `11128` 已修复。
+
+先独立安装官方 `@tencent-ai/codebuddy-code`，运行 `codebuddy`，选择 Chinese Site 并使用自己的同一账号完成正常登录。不要向插件导入桌面端令牌，也不要把密码、API Key 或令牌写入以下配置。只在本机 profile 的插件配置中启用：
+
+```yaml
+officialCliEnabled: true
+officialCliNode: /absolute/path/to/node
+officialCliEntry: /absolute/path/to/codebuddy-code/bin/codebuddy
+officialCliModel: ''
+```
+
+这些绝对路径逐机配置，不上传共享规则。`officialCliNode` 留空使用当前 Host 的 Node；`officialCliEntry` 必须指向独立官方安装的入口。`officialCliModel` 留空沿用当前 DSH 会话所选模型；显式填写会为这个官方 Agent 固定模型，不会切换 DSH 的模型选择。模型必须在该账号的官方目录中可用，插件不擅自回退到其它模型。
+
+- 在会话中输入 `/codebuddy 你的任务`。同一 DSH 会话继续使用其绑定的官方 CLI 会话；其它会话独立绑定。
+- 输入 `/codebuddy-stop` 请求正常取消该会话正在运行的官方任务。普通 DSH 停止按钮不保证会取消独立的命令任务。
+- 空闲时输入 `/codebuddy-new` 解除本会话绑定。历史不删除，下一次任务建立新的官方 CLI 会话。
+
+任务输入和结果作为 `command/run`、`command/done` 保存在本机 DSH 会话中，刷新后仍可查看；结果不会自动回注给当前 DSH 模型。官方 CLI 保存自己的会话历史，插件不将两份会话数据跨机同步。默认仅开放 `Read`、`Glob`、`Grep`，拒绝工具授权请求，不允许写文件或执行命令，也不提供全部 DSH 工具。工作区读取按用户提交的任务执行，权限限制不是文件系统沙箱。
+
+官方 CLI 的登录、账号权限和积分限制仍然适用。进程退出或任务结果不明时保留未完成记录，不自动重发；先核对原任务结果。这个入口默认关闭，缺少相关 Host 服务时不影响原网关或 DSH 核心运行。
 
 ## 环境要求
 

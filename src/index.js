@@ -2,9 +2,9 @@
  * Host half of `dsh-plugin-workbuddy-gateway`.
  *
  * WorkBuddy (www.workbuddy.ai / codebuddy.cn) sells model access as a
- * subscription rather than an API key, so its quota is only reachable through a
- * local translation gateway. This plugin makes that gateway a managed part of
- * DSH instead of a `.bat` file someone has to remember to start:
+ * subscription. The existing provider uses a local translation gateway; the
+ * opt-in official CLI commands use the CLI's normal login and own Agent loop.
+ * This plugin manages these independent routes inside DSH:
  *
  * - it supervises the gateway process (spawn, readiness, log ring, shutdown);
  * - it exposes the gateway's accounts, models and lifecycle over the host's own
@@ -30,6 +30,7 @@ import { Gateway, baseUrlFor, confirmGatewayRealm } from './gateway.js'
 import { mount } from './routes.js'
 import { applyProvider, buildProviderEntry, currentProviderBaseUrl, describeProvider, readProviderMap, PI_AI_NAMESPACE } from './provider-route.js'
 import { defineSchema } from './schema.js'
+import { mountOfficialCommands } from './official-commands.js'
 import {
   API_KEY_REF,
   PROVIDER_ID,
@@ -57,7 +58,7 @@ export const name = 'dsh-plugin-workbuddy-gateway'
 export const inject = ['webServer', 'settings']
 
 /** Plugin build marker, surfaced by `/health` so a stale mount is visible. */
-export const PLUGIN_VERSION = '0.3.1'
+export const PLUGIN_VERSION = '0.4.0'
 
 /**
  * Register the gateway supervisor, its routes, and its settings section.
@@ -94,6 +95,9 @@ export function apply(ctx, config) {
     current = normalizeSettings(readSettings())
     return current
   }
+
+  // Optional command services attach independently of the existing gateway.
+  mountOfficialCommands(ctx, syncCurrent)
 
   /**
    * Resolve the gateway script to run.
