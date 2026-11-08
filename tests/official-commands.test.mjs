@@ -213,3 +213,8 @@ test('mount registers direct commands through optional services and closes its o
   await cleanups[0]()
   assert.equal(closed, true)
 })
+
+test('the official mapping domain satisfies the Host storage unit-name grammar', () => {
+  assert.match(OFFICIAL_DOMAIN.name, /^[a-z][a-z0-9_]*$/)
+  for (const table of Object.keys(OFFICIAL_DOMAIN.tables)) assert.match(table, /^[a-z][a-z0-9_]*$/)
+})

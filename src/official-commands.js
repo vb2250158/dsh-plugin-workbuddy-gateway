@@ -24,7 +24,7 @@ const recordSchema = z.object({
 
 /** Local-only pairing records, validated by the Host storage-domain owner. */
 export const OFFICIAL_DOMAIN = Object.freeze({
-  name: 'workbuddy-official-cli',
+  name: 'workbuddy_official_cli',
   version: 1,
   tables: { sessions: { valueSchema: recordSchema } },
 })

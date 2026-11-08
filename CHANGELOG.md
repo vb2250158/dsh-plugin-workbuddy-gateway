@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use a storage-domain name accepted by the Host backend so the first official command can persist its session binding.
+
 - Use the official print/stream-json protocol for one-turn lifecycle, fixed-session continuation and normal interrupt/EOF exit. ACP process shutdown was not accepted; unknown outcomes and original diagnostics remain separate from successful replies.
 
 - Add opt-in direct official CodeBuddy CLI commands (`/codebuddy`, `/codebuddy-stop`, `/codebuddy-new`) using the CLI's normal domestic login, its own Agent session, and DSH command result persistence. The command path does not call the selected DSH model or inject its result into that model.
