@@ -23,7 +23,7 @@ officialCliModel: ''
 
 Keep these absolute paths machine-local. An empty `officialCliNode` uses the Host's Node executable. `officialCliEntry` must identify the independently installed official entry script. An empty `officialCliModel` preserves the receiving DSH session's model selection; an explicit value pins this official Agent without changing DSH's selected model. The account must support that model; the plugin does not silently fall back.
 
-- Send `/codebuddy your task`. Later tasks in the same DSH session resume its bound official CLI session; other DSH sessions have independent bindings.
+- Type `/` in the composer, choose `codebuddy` from the suggestions, enter the task, and send. Later tasks in the same DSH session resume its bound official CLI session; other DSH sessions have independent bindings.
 - Send `/codebuddy-stop` to request normal cancellation of that session's active official task. DSH's ordinary stop button does not necessarily cancel an independent command task.
 - While idle, send `/codebuddy-new` to detach the current binding. History is retained, and the next task creates a new official CLI session.
 

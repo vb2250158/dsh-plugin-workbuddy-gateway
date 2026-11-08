@@ -32,7 +32,7 @@ officialCliModel: ''
 
 这些绝对路径逐机配置，不上传共享规则。`officialCliNode` 留空使用当前 Host 的 Node；`officialCliEntry` 必须指向独立官方安装的入口。`officialCliModel` 留空沿用当前 DSH 会话所选模型；显式填写会为这个官方 Agent 固定模型，不会切换 DSH 的模型选择。模型必须在该账号的官方目录中可用，插件不擅自回退到其它模型。
 
-- 在会话中输入 `/codebuddy 你的任务`。同一 DSH 会话继续使用其绑定的官方 CLI 会话；其它会话独立绑定。
+- 在会话输入框输入 `/`，从候选列表选择 `codebuddy`，填写任务后发送。同一 DSH 会话继续使用其绑定的官方 CLI 会话；其它会话独立绑定。
 - 输入 `/codebuddy-stop` 请求正常取消该会话正在运行的官方任务。普通 DSH 停止按钮不保证会取消独立的命令任务。
 - 空闲时输入 `/codebuddy-new` 解除本会话绑定。历史不删除，下一次任务建立新的官方 CLI 会话。
 

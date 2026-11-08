@@ -239,6 +239,7 @@ export function mountOfficialCommands(ctx, readSettings) {
     ]) {
       injected.commands.register({
         name, description,
+        ...(operation === 'execute' ? { input: { hint: '描述要交给官方 CodeBuddy 的任务' } } : {}),
         handler: async invocation => {
           if (closed) return failure('官方 CodeBuddy 入口正在关闭。')
           if (operation === 'execute' && !readSettings().officialCliEnabled) {

@@ -205,6 +205,9 @@ test('mount registers direct commands through optional services and closes its o
     effect: effect => cleanups.push(effect()),
   })
   assert.deepEqual(registrations.map(item => item.name), ['codebuddy', 'codebuddy-stop', 'codebuddy-new'])
+  assert.equal(typeof registrations[0].input.hint, 'string')
+  assert.equal(registrations[1].input, undefined)
+  assert.equal(registrations[2].input, undefined)
   assert.equal((await registrations[0].handler(invocation())).kind, 'error')
   assert.equal(opened, 0)
   settings.officialCliEnabled = true
