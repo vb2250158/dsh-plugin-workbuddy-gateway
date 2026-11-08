@@ -5,6 +5,7 @@ import builtins
 from contextlib import ExitStack
 import importlib.util
 import io
+from itertools import product
 import json
 import os
 from pathlib import Path
@@ -298,11 +299,11 @@ class RealHandlerIntegrationTests(unittest.TestCase):
             stack.enter_context(patch.object(proxy, "API_KEY", "synthetic-local-key"))
             stack.enter_context(patch.object(proxy, "log"))
             expected_rows = 0
-            for route in ("/v1/chat/completions", "/v1/responses"):
+            for realm, route in product(("cn", "intl"), ("/v1/chat/completions", "/v1/responses")):
                 for upstream_status in (400, 403):
-                    with self.subTest(route=route, upstream_status=upstream_status):
+                    with self.subTest(realm=realm, route=route, upstream_status=upstream_status):
                         accounts = [types.SimpleNamespace(
-                            uid="synthetic-%s" % index, realm="intl",
+                            uid="synthetic-%s-%s" % (realm, index), realm=realm,
                             headers=Mock(return_value={"Content-Type": "application/json"}),
                             note_error=Mock(), note_model_rate_limit=Mock(), clear_error=Mock(),
                             clear_model_rate_limit=Mock(),
@@ -326,7 +327,7 @@ class RealHandlerIntegrationTests(unittest.TestCase):
                         handler.request_version = "HTTP/1.1"
                         handler.requestline = "POST %s HTTP/1.1" % route
                         handler.headers = {"Content-Length": str(len(request_body)),
-                                           "Content-Type": "application/json", "X-Realm": "intl",
+                                           "Content-Type": "application/json", "X-Realm": realm,
                                            "X-Session-Id": "synthetic-session",
                                            "Authorization": "Bearer synthetic-local-key"}
                         handler.rfile = io.BytesIO(request_body)
@@ -350,7 +351,15 @@ class RealHandlerIntegrationTests(unittest.TestCase):
                         self.assertNotIn("SYNTHETIC_PRIVATE_MARKER", error["message"])
                         self.assertNotIn("retry_policy", error["message"])
                         transport.assert_called_once()
+                        upstream_request = transport.call_args.args[0]
+                        configured_upstream = proxy.wb_accounts.REALM_CONFIGS[realm]["chat_upstream"]
+                        self.assertEqual(upstream_request.full_url, configured_upstream + proxy.CHAT_PATH)
+                        expected_upstream = {"cn": "https://copilot.tencent.com/v2/chat/completions",
+                                             "intl": "https://www.workbuddy.ai/v2/chat/completions"}
+                        self.assertEqual(upstream_request.full_url, expected_upstream[realm])
+                        pool.count_ready.assert_called_once_with(realm, "deepseek-v4.1-flash")
                         self.assertEqual(pool.pick_for_session.call_count, 1)
+                        self.assertEqual(pool.pick_for_session.call_args.kwargs["realm"], realm)
                         pool.affinity.unbind.assert_not_called()
                         for account in accounts:
                             account.note_error.assert_not_called()
