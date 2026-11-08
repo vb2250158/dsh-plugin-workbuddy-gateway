@@ -29,7 +29,7 @@ Keep these absolute paths machine-local. An empty `officialCliNode` uses the Hos
 
 DSH persists input and result as `command/run` and `command/done`, so they remain visible after refresh. Results are not injected back into the selected DSH model. The official CLI keeps its own session history; this plugin does not synchronize either history across machines. Default tools are limited to `Read`, `Glob`, and `Grep`; permission requests are rejected. File edits, command execution, and the full DSH tool set are unavailable. Task-authorized reads are not a filesystem sandbox.
 
-Official login, account entitlement, and credit limits still apply. An unknown process or task outcome stays unresolved and is not automatically replayed. The route is off by default, and absent optional Host services do not prevent the gateway or DSH core from running.
+The integration uses official print/stream-json controls for fixed-session continuation, interruption, and normal EOF exit. It never reports process termination as normal completion. Official login, account entitlement, and credit limits still apply. An unknown process or task outcome stays unresolved and is not automatically replayed. The route is off by default, and absent optional Host services do not prevent the gateway or DSH core from running.
 
 ## Requirements and platforms
 

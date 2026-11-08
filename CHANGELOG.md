@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use the official print/stream-json protocol for one-turn lifecycle, fixed-session continuation and normal interrupt/EOF exit. ACP process shutdown was not accepted; unknown outcomes and original diagnostics remain separate from successful replies.
+
 - Add opt-in direct official CodeBuddy CLI commands (`/codebuddy`, `/codebuddy-stop`, `/codebuddy-new`) using the CLI's normal domestic login, its own Agent session, and DSH command result persistence. The command path does not call the selected DSH model or inject its result into that model.
 - Persist each DSH-to-CLI session binding through the Host storage domain, preserve the selected model by default, and reject unknown prior outcomes rather than automatically resubmitting a task. Default tools are limited to `Read`, `Glob`, and `Grep`; authorization requests are rejected. This path does not provide all DSH tools.
 - Keep gateway `11128` refusals terminal. The official CLI path does not extract desktop credentials, copy gateway-vault tokens, or rewrite request identities to evade channel checks. A user's account entitlement and real reply still require local acceptance.

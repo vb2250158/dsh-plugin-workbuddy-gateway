@@ -7,7 +7,7 @@ import { access } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, isAbsolute, delimiter } from 'node:path'
 import { z } from 'zod'
-import { OfficialAcpClient, officialAcpArgv } from './official-acp.js'
+import { OfficialCliClient, officialCliArgv } from './official-cli.js'
 
 const recordSchema = z.object({
   remoteSessionId: z.string().min(1).max(512).nullable(),
@@ -39,7 +39,7 @@ const success = text => ({ kind: 'success', text })
  */
 export function createOfficialCommands({
   store, settings, directory, spawn,
-  clientFactory = options => new OfficialAcpClient(options),
+  clientFactory = options => new OfficialCliClient(options),
   checkPath = access,
 }) {
   const active = new Map()
@@ -100,9 +100,11 @@ export function createOfficialCommands({
       intentSaved = true
       operation.client = clientFactory({
         spawn, cwd,
-        argv: officialAcpArgv({ nodePath, cliPath: entry, model }),
+        argv: officialCliArgv({ nodePath, cliPath: entry, model }),
         env: {
           CODEBUDDY_INTERNET_ENVIRONMENT: 'internal',
+          CODEBUDDY_DISABLE_COMPILE_CACHE: '1',
+          CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS: '1',
           CODEBUDDY_AUTH_TOKEN: undefined, CODEBUDDY_API_KEY: undefined,
           CODEBUDDY_BASE_URL: undefined, ANTHROPIC_API_KEY: undefined,
           ANTHROPIC_AUTH_TOKEN: undefined, ANTHROPIC_BASE_URL: undefined,
@@ -116,7 +118,7 @@ export function createOfficialCommands({
         onSession: async remoteSessionId => {
           record.remoteSessionId = remoteSessionId
           await save(id, record)
-          // The transport awaits this hook before sending session/prompt.
+          // The transport awaits this hook before sending the print-mode user message.
           sessionAdmitted = true
         },
       })
