@@ -35,6 +35,7 @@ import uuid
 
 import wb_accounts
 import wb_catalog
+from wb_errors import channel_rejection_error, is_channel_rejection_body
 from wb_rate_limits import rate_limit_reset, is_model_rate_limit
 
 RATE_LIMIT_FALLBACK_SECONDS = 300
@@ -1480,6 +1481,10 @@ def open_upstream(payload, session_key=None, target_realm=None):
             # Preserve the upstream payload for both supported client protocols.
             raw = exc.read(64 * 1024)
             exc.close()
+            if is_channel_rejection_body(raw):
+                # A rejected channel cannot be repaired by switching accounts.
+                raise urllib.error.HTTPError(exc.url, exc.code, exc.reason,
+                                             exc.headers, io.BytesIO(raw))
             if is_account_restriction(raw):
                 if session_key and POOL:
                     POOL.affinity.unbind(session_key)
@@ -2166,7 +2171,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(code, {"error": {"message": message, "type": err_type, "code": code}})
 
     def _upstream_error(self, exc, model, started_at):
-        """Return the upstream explanation without truncating escaped review text."""
+        """Project channel denials and preserve other upstream explanations."""
         with exc:
             detail = exc.read(64 * 1024).decode("utf-8", "replace")
         upstream_data = None
@@ -2177,6 +2182,9 @@ class Handler(BaseHTTPRequestHandler):
             pass  # Gateways may return HTML or plain text instead of JSON.
         record_error(model, exc.code, detail,
                      elapsed_ms=int((time.time() - started_at) * 1000))
+        channel_error = channel_rejection_error(upstream_data, exc.code)
+        if channel_error is not None:
+            return self._json(exc.code, {"error": channel_error})
         restricted = isinstance(upstream_data, dict) and upstream_data.get("code") in (
             ACCOUNT_RESTRICTION_CODE, str(ACCOUNT_RESTRICTION_CODE),
         )

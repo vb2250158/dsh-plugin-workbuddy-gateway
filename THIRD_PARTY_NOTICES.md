@@ -20,6 +20,8 @@ upstream license is retained.
 `Copyright (c) 2026` with no name attached, and it is reproduced here exactly as
 received rather than attributed to a name its own text does not state.
 
+**Unreleased channel-error handling.** Locally owned `wb_errors.py` classifies explicit upstream business code `11128`. `wb_proxy.py` stops before account rotation, preserves the HTTP status and returns a concise structured refusal without echoing the raw upstream message. It does not alter request headers or prompts, grant channel approval, or change other account and rate-limit handling. Offline regressions cover both supported client protocols.
+
 **Unreleased local modifications.** `wb_scheduler.py` uses `checkin_claimed_today()` for startup and scheduled check-ins, skips disabled accounts, excludes overlapping cycles, and refreshes credits after successful check-in. Credit-refresh and travel failures do not prevent later accounts from checking in. The initial wait observes shutdown. Offline scheduler tests use real account persistence with mocked upstream requests.
 
 `wb_growth.py` adds locally owned daily growth confirmation, using the existing `wb_tasks.build_event` format and the chat-side `/v2/report` endpoint referenced by [upstream commit ffef0a5](https://github.com/ardeyouxipianyi/workbuddy2api-hub/commit/ffef0a5d96bd15bdad7105c3039a6e9ca71710fa). It requires the official heatmap's current-day activity flag, stores admission before sending, and bounds subsequent read attempts. `wb_accounts.py` persists and exposes this state and preserves it during reimport; `wb_scheduler.py` owns the checks; `wb_proxy.py` exposes authenticated policy updates. No upstream reward-redemption or lottery automation is included in this change.

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Treat explicit upstream channel rejection `11128` as terminal before account rotation. Preserve the HTTP status, expose a concise structured error and bounded request identifier, and keep account restrictions and model-rate-limit handling unchanged. This diagnostic fix does not grant upstream channel approval.
+
 ## 0.3.1 - 2026-10-20
 
 - Integrate upstream 0.3.0 settings, account handling and opt-in daily/growth checks while retaining the maintenance fork source, icon and isolated runtime directories.
